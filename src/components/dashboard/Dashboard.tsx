@@ -45,8 +45,8 @@ const Dashboard = ({
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-bold">AI Orchestration</h1>
             <GuideTooltip content="Open interactive user guide">
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 size="sm"
                 onClick={() => setShowGuide(true)}
               >
@@ -116,9 +116,20 @@ const Dashboard = ({
                 Analytics
               </Button>
             </GuideTooltip>
+            <GuideTooltip content="System architecture and visual analytics dashboard">
+              <Button
+                variant="ghost"
+                className="w-full justify-start"
+                onClick={() => window.open('/admin', '_blank')}
+                data-guide="admin-panel"
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Admin Panel
+              </Button>
+            </GuideTooltip>
           </nav>
         </div>
-        
+
         {/* User section */}
         <div className="p-4 border-t">
           <div className="flex items-center space-x-3">
