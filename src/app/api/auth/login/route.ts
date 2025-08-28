@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 
-// Mock user database - replace with real database
-const users = [
-  {
-    id: '1',
-    name: 'Demo User',
-    email: 'demo@aiorch.com',
-    password: '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/RK.s5uO.G', // password123
-    role: 'admin',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=demo'
-  }
-];
+const JWT_SECRET = process.env.JWT_SECRET;
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required');
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,14 +23,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find user
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (!user) {
+    // Find user in database
+    const userResult = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
+    
+    if (userResult.length === 0) {
       return NextResponse.json(
         { message: 'Invalid email or password' },
         { status: 401 }
       );
     }
+
+    const user = userResult[0];
 
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
@@ -45,6 +43,14 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+
+    // Update last login
+    await db.update(users)
+      .set({ 
+        lastLogin: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, user.id));
 
     // Generate JWT token
     const token = jwt.sign(
