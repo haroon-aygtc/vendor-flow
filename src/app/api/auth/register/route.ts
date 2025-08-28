@@ -1,20 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { nanoid } from 'nanoid';
 
-// Mock user database - replace with real database
-let users = [
-  {
-    id: '1',
-    name: 'Demo User',
-    email: 'demo@aiorch.com',
-    password: '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/RK.s5uO.G', // password123
-    role: 'admin',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=demo'
-  }
-];
+const JWT_SECRET = process.env.JWT_SECRET;
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required');
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,8 +25,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user already exists
-    const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (existingUser) {
+    const existingUser = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
+    if (existingUser.length > 0) {
       return NextResponse.json(
         { message: 'User with this email already exists' },
         { status: 409 }
@@ -57,17 +53,21 @@ export async function POST(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Create new user
+    const userId = nanoid();
     const newUser = {
-      id: (users.length + 1).toString(),
+      id: userId,
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password: hashedPassword,
-      role: 'user',
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`
+      role: 'user' as const,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastLogin: new Date()
     };
 
-    // Add to users array (in production, save to database)
-    users.push(newUser);
+    // Insert user into database
+    await db.insert(users).values(newUser);
 
     // Generate JWT token
     const token = jwt.sign(

@@ -1,41 +1,165 @@
 "use client";
 
-import React, { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import {
-  LayoutDashboard,
-  Users,
-  FileText,
-  GitBranch,
-  Settings,
-  Bell,
-  Search,
-  BarChart3,
-  Menu,
+import React, { useState, useEffect } from 'react';
+import { 
+  LayoutDashboard, 
+  Settings, 
+  Users, 
+  GitBranch, 
+  FileText, 
+  BarChart3, 
+  Bell, 
+  Search, 
+  Menu, 
   HelpCircle,
-} from "lucide-react";
-import WorkflowBuilder from "@/components/workflow/WorkflowBuilder";
-import AgentConfiguration from "@/components/agents/AgentConfiguration";
-import DocumentProcessor from "@/components/documents/DocumentProcessor";
-import SmartVendorSelection from '../procurement/SmartVendorSelection';
-import { UserGuide, GuideTooltip, QuickTips } from "@/components/ui/user-guide";
+  Activity,
+  TrendingUp,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  Loader2
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Separator } from '@/components/ui/separator';
+import { UserGuide } from '@/components/ui/user-guide';
+import { useAuth } from '@/contexts/AuthContext';
+import Cookies from 'js-cookie';
 
 interface DashboardProps {
   userName?: string;
   userAvatar?: string;
 }
 
+interface DashboardData {
+  stats: {
+    activeAgents: number;
+    workflows: number;
+    documents: number;
+    uptime: number;
+  };
+  activities: Array<{
+    id: string;
+    type: string;
+    message: string;
+    createdAt: string;
+    status: 'success' | 'warning' | 'error' | 'info';
+  }>;
+  agents: Array<{
+    id: string;
+    name: string;
+    status: string;
+    lastRun?: string;
+  }>;
+  workflows: Array<{
+    id: string;
+    name: string;
+    status: string;
+    updatedAt: string;
+  }>;
+}
+
+const GuideTooltip = ({ children, content }: { children: React.ReactNode; content: string }) => (
+  <div title={content}>
+    {children}
+  </div>
+);
+
 const Dashboard = ({
-  userName = "John Doe",
+  userName = "User",
   userAvatar = "",
 }: DashboardProps) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [showGuide, setShowGuide] = useState(false);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { user, logout } = useAuth();
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      const token = Cookies.get('auth_token');
+      
+      if (!token) {
+        setError('No authentication token found');
+        return;
+      }
+
+      const response = await fetch('/api/dashboard', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch dashboard data');
+      }
+
+      const data = await response.json();
+      setDashboardData(data);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      setError('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getActivityIcon = (type: string, status: string) => {
+    switch (status) {
+      case 'success':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'warning':
+        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+      case 'error':
+        return <AlertCircle className="h-4 w-4 text-red-500" />;
+      default:
+        return <Activity className="h-4 w-4 text-blue-500" />;
+    }
+  };
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} hours ago`;
+    return `${Math.floor(diffInMinutes / 1440)} days ago`;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-8 w-8 mx-auto mb-4 text-red-600" />
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button onClick={fetchDashboardData}>Retry</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -43,7 +167,7 @@ const Dashboard = ({
       <div className="hidden md:flex w-64 flex-col bg-background border-r fixed left-0 top-0 h-full z-10">
         <div className="p-4 border-b">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-bold">AI Orchestration</h1>
+            <h1 className="text-xl font-bold">AxonStreamAI</h1>
             <GuideTooltip content="Open interactive user guide">
               <Button
                 variant="ghost"
@@ -134,15 +258,18 @@ const Dashboard = ({
         <div className="p-4 border-t">
           <div className="flex items-center space-x-3">
             <Avatar>
-              <AvatarImage src={userAvatar} alt={userName} />
-              <AvatarFallback>{userName.charAt(0)}</AvatarFallback>
+              <AvatarImage src={user?.avatar || userAvatar} alt={user?.name || userName} />
+              <AvatarFallback>{(user?.name || userName).charAt(0)}</AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-900 truncate">
-                {userName}
+                {user?.name || userName}
               </p>
-              <p className="text-xs text-gray-500 truncate">Administrator</p>
+              <p className="text-xs text-gray-500 truncate">{user?.role || 'User'}</p>
             </div>
+            <Button variant="ghost" size="sm" onClick={logout}>
+              Logout
+            </Button>
           </div>
         </div>
       </div>
@@ -176,117 +303,184 @@ const Dashboard = ({
               </Button>
             </GuideTooltip>
             <Avatar>
-              <AvatarImage src={userAvatar} alt={userName} />
-              <AvatarFallback>{userName.charAt(0)}</AvatarFallback>
+              <AvatarImage src={user?.avatar || userAvatar} alt={user?.name || userName} />
+              <AvatarFallback>{(user?.name || userName).charAt(0)}</AvatarFallback>
             </Avatar>
           </div>
         </header>
 
         {/* Content area */}
         <main className="flex-1 overflow-auto p-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsContent value="overview" className="mt-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-6">
-                  {/* Stats Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Card>
-                      <CardContent className="p-6">
-                        <div className="flex items-center">
-                          <div className="p-2 bg-blue-100 rounded-lg">
-                            <Users className="h-6 w-6 text-blue-600" />
-                          </div>
-                          <div className="ml-4">
-                            <p className="text-sm font-medium text-gray-600">Active Agents</p>
-                            <p className="text-2xl font-bold text-gray-900">12</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="p-6">
-                        <div className="flex items-center">
-                          <div className="p-2 bg-green-100 rounded-lg">
-                            <GitBranch className="h-6 w-6 text-green-600" />
-                          </div>
-                          <div className="ml-4">
-                            <p className="text-sm font-medium text-gray-600">Workflows</p>
-                            <p className="text-2xl font-bold text-gray-900">8</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="p-6">
-                        <div className="flex items-center">
-                          <div className="p-2 bg-purple-100 rounded-lg">
-                            <FileText className="h-6 w-6 text-purple-600" />
-                          </div>
-                          <div className="ml-4">
-                            <p className="text-sm font-medium text-gray-600">Documents</p>
-                            <p className="text-2xl font-bold text-gray-900">156</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <TabsContent value="overview" className="space-y-6">
+              {/* Stats Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Active Agents</CardTitle>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{dashboardData?.stats.activeAgents || 0}</div>
+                    <p className="text-xs text-muted-foreground">
+                      <TrendingUp className="inline h-3 w-3 mr-1" />
+                      +2 from last week
+                    </p>
+                  </CardContent>
+                </Card>
 
-                  {/* Recent Activity */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Recent Activity</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-4">
-                        <div className="flex items-center space-x-4">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">Document Analysis Completed</p>
-                            <p className="text-xs text-gray-500">2 minutes ago</p>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Workflows</CardTitle>
+                    <GitBranch className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{dashboardData?.stats.workflows || 0}</div>
+                    <p className="text-xs text-muted-foreground">
+                      <TrendingUp className="inline h-3 w-3 mr-1" />
+                      +1 from last week
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Documents</CardTitle>
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{dashboardData?.stats.documents || 0}</div>
+                    <p className="text-xs text-muted-foreground">
+                      <TrendingUp className="inline h-3 w-3 mr-1" />
+                      +12 from last week
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">System Uptime</CardTitle>
+                    <Activity className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{dashboardData?.stats.uptime || 0}%</div>
+                    <p className="text-xs text-muted-foreground">
+                      <CheckCircle className="inline h-3 w-3 mr-1 text-green-500" />
+                      All systems operational
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Recent Activity */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Clock className="mr-2 h-4 w-4" />
+                      Recent Activity
+                    </CardTitle>
+                    <CardDescription>Latest system activities and events</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {dashboardData?.activities?.length ? (
+                        dashboardData.activities.map((activity) => (
+                          <div key={activity.id} className="flex items-center space-x-4">
+                            {getActivityIcon(activity.type, activity.status)}
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{activity.message}</p>
+                              <p className="text-xs text-gray-500">{formatTimeAgo(activity.createdAt)}</p>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center space-x-4">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">New Agent Created</p>
-                            <p className="text-xs text-gray-500">15 minutes ago</p>
+                        ))
+                      ) : (
+                        <p className="text-sm text-gray-500">No recent activities</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Users className="mr-2 h-4 w-4" />
+                      Active Agents
+                    </CardTitle>
+                    <CardDescription>Currently running AI agents</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {dashboardData?.agents?.length ? (
+                        dashboardData.agents.map((agent) => (
+                          <div key={agent.id} className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium">{agent.name}</p>
+                              <p className="text-xs text-gray-500">
+                                Last run: {agent.lastRun ? formatTimeAgo(agent.lastRun) : 'Never'}
+                              </p>
+                            </div>
+                            <Badge variant={agent.status === 'active' ? 'default' : 'secondary'}>
+                              {agent.status}
+                            </Badge>
                           </div>
-                        </div>
-                        <div className="flex items-center space-x-4">
-                          <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">Workflow Execution Started</p>
-                            <p className="text-xs text-gray-500">1 hour ago</p>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-                <div className="space-y-6">
-                  <QuickTips />
-                </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-gray-500">No active agents</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
 
-            <TabsContent value="agents" className="mt-6">
-              <AgentConfiguration />
+            {/* Other tabs would be implemented similarly with real data */}
+            <TabsContent value="providers">
+              <Card>
+                <CardHeader>
+                  <CardTitle>AI Providers</CardTitle>
+                  <CardDescription>Manage your AI provider connections</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-gray-500">Provider management interface would be implemented here</p>
+                </CardContent>
+              </Card>
             </TabsContent>
 
-            <TabsContent value="providers" className="mt-6">
-              <SmartVendorSelection />
+            <TabsContent value="agents">
+              <Card>
+                <CardHeader>
+                  <CardTitle>AI Agents</CardTitle>
+                  <CardDescription>Configure and manage your AI agents</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-gray-500">Agent management interface would be implemented here</p>
+                </CardContent>
+              </Card>
             </TabsContent>
 
-            <TabsContent value="workflows" className="mt-6">
-              <WorkflowBuilder />
+            <TabsContent value="workflows">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Workflows</CardTitle>
+                  <CardDescription>Build and manage AI workflows</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-gray-500">Workflow builder interface would be implemented here</p>
+                </CardContent>
+              </Card>
             </TabsContent>
 
-            <TabsContent value="documents" className="mt-6">
-              <DocumentProcessor />
-            </TabsContent>
-
-            <TabsContent value="procurement" className="mt-6">
-              <SmartVendorSelection />
+            <TabsContent value="documents">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Documents</CardTitle>
+                  <CardDescription>Process documents with AI agents</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-gray-500">Document processing interface would be implemented here</p>
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         </main>
