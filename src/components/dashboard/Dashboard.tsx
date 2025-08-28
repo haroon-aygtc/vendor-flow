@@ -38,9 +38,9 @@ const Dashboard = ({
   const [showGuide, setShowGuide] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex">
       {/* Sidebar */}
-      <div className="hidden md:flex w-64 flex-col bg-background border-r">
+      <div className="hidden md:flex w-64 flex-col bg-background border-r fixed left-0 top-0 h-full z-10">
         <div className="p-4 border-b">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-bold">AI Orchestration</h1>
@@ -137,9 +137,9 @@ const Dashboard = ({
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden md:ml-64">
+      <div className="flex-1 flex flex-col ml-0 md:ml-64">
         {/* Header */}
-        <header className="h-14 border-b bg-background flex items-center justify-between px-4 lg:px-6">
+        <header className="h-14 border-b bg-background flex items-center justify-between px-4 lg:px-6 sticky top-0 z-5">
           <div className="flex items-center">
             <Button variant="ghost" size="icon" className="md:hidden">
               <Menu className="h-5 w-5" />
