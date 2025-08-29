@@ -1,843 +1,543 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from 'react';
 import ReactFlow, {
+  Node,
+  Edge,
+  addEdge,
   Background,
   Controls,
   MiniMap,
-  Panel,
   useNodesState,
   useEdgesState,
-  addEdge,
   Connection,
-  Edge,
-  Node,
-} from "reactflow";
-import "reactflow/dist/style.css";
-import {
-  PlusCircle,
-  Save,
-  Play,
-  Settings,
-  Trash2,
-  Wrench,
-  Bot,
-  FileText,
-  Database,
+  NodeTypes,
+  MarkerType,
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+import { 
+  Plus, 
+  Save, 
+  Play, 
+  Pause, 
+  Trash2, 
+  Settings, 
+  Bot, 
   GitBranch,
-  StopCircle,
+  Loader2,
   CheckCircle,
   AlertCircle,
-} from "lucide-react";
+  FileText,
+  Decision,
+  ArrowRight
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useToast } from '@/components/ui/use-toast';
+import Cookies from 'js-cookie';
 
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
-import { Button } from "../ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import { Input } from "../ui/input";
-import { Label } from "../ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
-import { Separator } from "../ui/separator";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "../ui/accordion";
-import { GuideTooltip } from "@/components/ui/user-guide";
-import { clientAIProviderService } from '@/services/clientAIProviderService';
-import { Badge } from "../ui/badge";
-import { Progress } from "../ui/progress";
-
-interface NodeData {
-  label: string;
-  type: string;
-  description?: string;
-  config?: Record<string, any>;
-  status?: 'idle' | 'running' | 'completed' | 'error';
-  result?: any;
-}
-
-interface WorkflowExecution {
+interface Workflow {
   id: string;
-  status: 'idle' | 'running' | 'completed' | 'error';
-  startTime?: Date;
-  endTime?: Date;
-  currentNode?: string;
-  results: Record<string, any>;
-  logs: Array<{
-    timestamp: Date;
-    nodeId: string;
-    message: string;
-    type: 'info' | 'error' | 'success';
-  }>;
+  name: string;
+  description: string;
+  nodes: any[];
+  edges: any[];
+  status: 'draft' | 'active' | 'paused' | 'error';
+  executionCount: number;
+  lastExecuted?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-const initialNodes: Node<NodeData>[] = [
-  {
-    id: "1",
-    type: "input",
-    data: {
-      label: "Start",
-      type: "start",
-      description: "Entry point of workflow",
-      status: 'idle'
-    },
-    position: { x: 250, y: 5 },
-  },
-];
+interface Agent {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+}
 
-const initialEdges: Edge[] = [];
+// Custom Node Components
+const AgentNode = ({ data }: { data: any }) => (
+  <div className="px-4 py-2 shadow-md rounded-md bg-white border-2 border-blue-200">
+    <div className="flex items-center">
+      <Bot className="h-4 w-4 mr-2 text-blue-600" />
+      <div className="ml-2">
+        <div className="text-lg font-bold">{data.label}</div>
+        <div className="text-gray-500 text-sm">{data.agentName}</div>
+      </div>
+    </div>
+  </div>
+);
 
-const nodeTypes = [
-  { id: "agent", label: "Agent", icon: <Bot className="h-4 w-4" /> },
-  { id: "tool", label: "Tool", icon: <Wrench className="h-4 w-4" /> },
-  {
-    id: "decision",
-    label: "Decision",
-    icon: <GitBranch className="h-4 w-4" />,
-  },
-  { id: "document", label: "Document", icon: <FileText className="h-4 w-4" /> },
-  { id: "data", label: "Data Source", icon: <Database className="h-4 w-4" /> },
-];
+const DecisionNode = ({ data }: { data: any }) => (
+  <div className="px-4 py-2 shadow-md rounded-md bg-white border-2 border-yellow-200">
+    <div className="flex items-center">
+      <GitBranch className="h-4 w-4 mr-2 text-yellow-600" />
+      <div className="ml-2">
+        <div className="text-lg font-bold">{data.label}</div>
+        <div className="text-gray-500 text-sm">Decision Point</div>
+      </div>
+    </div>
+  </div>
+);
+
+const InputNode = ({ data }: { data: any }) => (
+  <div className="px-4 py-2 shadow-md rounded-md bg-white border-2 border-green-200">
+    <div className="flex items-center">
+      <ArrowRight className="h-4 w-4 mr-2 text-green-600" />
+      <div className="ml-2">
+        <div className="text-lg font-bold">{data.label}</div>
+        <div className="text-gray-500 text-sm">Input</div>
+      </div>
+    </div>
+  </div>
+);
+
+const OutputNode = ({ data }: { data: any }) => (
+  <div className="px-4 py-2 shadow-md rounded-md bg-white border-2 border-purple-200">
+    <div className="flex items-center">
+      <FileText className="h-4 w-4 mr-2 text-purple-600" />
+      <div className="ml-2">
+        <div className="text-lg font-bold">{data.label}</div>
+        <div className="text-gray-500 text-sm">Output</div>
+      </div>
+    </div>
+  </div>
+);
+
+const nodeTypes: NodeTypes = {
+  agent: AgentNode,
+  decision: DecisionNode,
+  input: InputNode,
+  output: OutputNode,
+};
 
 const WorkflowBuilder = () => {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const [selectedNode, setSelectedNode] = useState<Node<NodeData> | null>(null);
-  const [workflowName, setWorkflowName] = useState("New Workflow");
-  const [workflowDescription, setWorkflowDescription] = useState("");
-  const [activeTab, setActiveTab] = useState("canvas");
-  const [execution, setExecution] = useState<WorkflowExecution>({
-    id: '',
-    status: 'idle',
-    results: {},
-    logs: []
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [executing, setExecuting] = useState<string | null>(null);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showNodeDialog, setShowNodeDialog] = useState(false);
+  const [executionResult, setExecutionResult] = useState<any>(null);
+  const { toast } = useToast();
+
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  const [newWorkflow, setNewWorkflow] = useState({
+    name: '',
+    description: ''
   });
-  const [savedWorkflows, setSavedWorkflows] = useState<any[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [providers, setProviders] = useState<any[]>([]);
+
+  const [newNode, setNewNode] = useState({
+    type: 'agent',
+    label: '',
+    agentId: '',
+    prompt: '',
+    condition: ''
+  });
 
   useEffect(() => {
-    loadWorkflows();
-    loadAgents();
-    loadProviders();
+    fetchWorkflows();
+    fetchAgents();
   }, []);
 
-  const loadWorkflows = () => {
+  const fetchWorkflows = async () => {
     try {
-      const saved = localStorage.getItem('workflows');
-      if (saved) {
-        setSavedWorkflows(JSON.parse(saved));
-      }
-    } catch (error) {
-      console.error('Failed to load workflows:', error);
-    }
-  };
-
-  const loadAgents = () => {
-    try {
-      const saved = localStorage.getItem('ai-agents');
-      if (saved) {
-        setAgents(JSON.parse(saved));
-      }
-    } catch (error) {
-      console.error('Failed to load agents:', error);
-    }
-  };
-
-  const loadProviders = () => {
-    try {
-      const providers = clientAIProviderService.getProviders();
-      setProviders(providers.filter(p => p.status === 'connected'));
-    } catch (error) {
-      console.error('Failed to load providers:', error);
-    }
-  };
-
-  const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges],
-  );
-
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    setSelectedNode(node);
-    setActiveTab("properties");
-  }, []);
-
-  const addNode = (type: string) => {
-    const newNode = {
-      id: `${Date.now()}`,
-      data: {
-        label: `${type.charAt(0).toUpperCase() + type.slice(1)} ${nodes.length + 1}`,
-        type,
-        status: 'idle' as const
-      },
-      position: { x: 250, y: 100 + nodes.length * 80 },
-    };
-    setNodes((nds) => nds.concat(newNode));
-  };
-
-  const updateNodeData = (key: string, value: string) => {
-    if (!selectedNode) return;
-
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === selectedNode.id) {
-          return {
-            ...node,
-            data: { ...node.data, [key]: value },
-          };
-        }
-        return node;
-      }),
-    );
-
-    setSelectedNode((prev) =>
-      prev
-        ? {
-            ...prev,
-            data: { ...prev.data, [key]: value },
-          }
-        : null,
-    );
-  };
-
-  const deleteSelectedNode = () => {
-    if (!selectedNode) return;
-    setNodes((nds) => nds.filter((node) => node.id !== selectedNode.id));
-    setEdges((eds) =>
-      eds.filter(
-        (edge) =>
-          edge.source !== selectedNode.id && edge.target !== selectedNode.id,
-      ),
-    );
-    setSelectedNode(null);
-  };
-
-  const saveWorkflow = () => {
-    try {
-      const workflow = {
-        id: Date.now().toString(),
-        name: workflowName,
-        description: workflowDescription,
-        nodes,
-        edges,
-        createdAt: new Date(),
-        status: 'active'
-      };
-
-      const existingWorkflows = JSON.parse(localStorage.getItem('workflows') || '[]');
-      const updatedWorkflows = [...existingWorkflows, workflow];
-      localStorage.setItem('workflows', JSON.stringify(updatedWorkflows));
-      setSavedWorkflows(updatedWorkflows);
-
-      // Log activity
-      const activities = JSON.parse(localStorage.getItem('recent-activities') || '[]');
-      activities.unshift({
-        id: `workflow-save-${Date.now()}`,
-        type: 'success',
-        message: `Workflow "${workflowName}" saved successfully`,
-        timestamp: new Date()
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/workflows', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
-      localStorage.setItem('recent-activities', JSON.stringify(activities.slice(0, 50)));
 
-      console.log("Workflow saved successfully");
+      if (response.ok) {
+        const data = await response.json();
+        setWorkflows(data.workflows || []);
+      }
     } catch (error) {
-      console.error('Failed to save workflow:', error);
+      console.error('Error fetching workflows:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch workflows",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const executeWorkflow = async () => {
-    if (nodes.length <= 1) {
-      console.error('Workflow must have at least one action node');
+  const fetchAgents = async () => {
+    try {
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/agents', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAgents(data.agents || []);
+      }
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+    }
+  };
+
+  const createWorkflow = async () => {
+    if (!newWorkflow.name) {
+      toast({
+        title: "Validation Error",
+        description: "Workflow name is required",
+        variant: "destructive",
+      });
       return;
     }
 
-    const executionId = `exec-${Date.now()}`;
-    setExecution({
-      id: executionId,
-      status: 'running',
-      startTime: new Date(),
-      results: {},
-      logs: [{
-        timestamp: new Date(),
-        nodeId: 'system',
-        message: 'Workflow execution started',
-        type: 'info'
-      }]
-    });
-
     try {
-      // Reset all node statuses
-      setNodes(nds => nds.map(node => ({
-        ...node,
-        data: { ...node.data, status: 'idle' }
-      })));
-
-      // Execute nodes in order based on connections
-      const executionOrder = getExecutionOrder();
-      
-      for (const nodeId of executionOrder) {
-        const node = nodes.find(n => n.id === nodeId);
-        if (!node || node.data.type === 'start') continue;
-
-        await executeNode(node);
-      }
-
-      setExecution(prev => ({
-        ...prev,
-        status: 'completed',
-        endTime: new Date(),
-        logs: [...prev.logs, {
-          timestamp: new Date(),
-          nodeId: 'system',
-          message: 'Workflow execution completed successfully',
-          type: 'success'
-        }]
-      }));
-
-      // Log activity
-      const activities = JSON.parse(localStorage.getItem('recent-activities') || '[]');
-      activities.unshift({
-        id: `workflow-exec-${Date.now()}`,
-        type: 'success',
-        message: `Workflow "${workflowName}" executed successfully`,
-        timestamp: new Date()
+      setSaving(true);
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/workflows', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...newWorkflow,
+          nodes: [],
+          edges: []
+        }),
       });
-      localStorage.setItem('recent-activities', JSON.stringify(activities.slice(0, 50)));
 
+      if (response.ok) {
+        const data = await response.json();
+        setWorkflows([data.workflow, ...workflows]);
+        setSelectedWorkflow(data.workflow);
+        setNodes([]);
+        setEdges([]);
+        setNewWorkflow({ name: '', description: '' });
+        setShowCreateDialog(false);
+        toast({
+          title: "Success",
+          description: "Workflow created successfully",
+        });
+      } else {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
     } catch (error) {
-      setExecution(prev => ({
-        ...prev,
-        status: 'error',
-        endTime: new Date(),
-        logs: [...prev.logs, {
-          timestamp: new Date(),
-          nodeId: 'system',
-          message: `Workflow execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          type: 'error'
-        }]
-      }));
+      console.error('Error creating workflow:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create workflow",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const getExecutionOrder = (): string[] => {
-    // Simple topological sort based on edges
-    const visited = new Set<string>();
-    const order: string[] = [];
-    
-    const visit = (nodeId: string) => {
-      if (visited.has(nodeId)) return;
-      visited.add(nodeId);
-      
-      // Find all nodes that this node connects to
-      const outgoingEdges = edges.filter(edge => edge.source === nodeId);
-      outgoingEdges.forEach(edge => visit(edge.target));
-      
-      order.unshift(nodeId);
-    };
-
-    // Start from the start node
-    const startNode = nodes.find(n => n.data.type === 'start');
-    if (startNode) {
-      visit(startNode.id);
-    }
-
-    return order;
-  };
-
-  const executeNode = async (node: Node<NodeData>): Promise<any> => {
-    // Update node status to running
-    setNodes(nds => nds.map(n => 
-      n.id === node.id 
-        ? { ...n, data: { ...n.data, status: 'running' } }
-        : n
-    ));
-
-    setExecution(prev => ({
-      ...prev,
-      currentNode: node.id,
-      logs: [...prev.logs, {
-        timestamp: new Date(),
-        nodeId: node.id,
-        message: `Executing ${node.data.label}`,
-        type: 'info'
-      }]
-    }));
+  const saveWorkflow = async () => {
+    if (!selectedWorkflow) return;
 
     try {
-      let result;
+      setSaving(true);
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/workflows', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: selectedWorkflow.id,
+          name: selectedWorkflow.name,
+          description: selectedWorkflow.description,
+          nodes,
+          edges,
+          status: selectedWorkflow.status
+        }),
+      });
 
-      switch (node.data.type) {
-        case 'agent':
-          result = await executeAgentNode(node);
-          break;
-        case 'tool':
-          result = await executeToolNode(node);
-          break;
-        case 'decision':
-          result = await executeDecisionNode(node);
-          break;
-        case 'document':
-          result = await executeDocumentNode(node);
-          break;
-        case 'data':
-          result = await executeDataNode(node);
-          break;
-        default:
-          result = { success: true, message: 'Node executed' };
-      }
-
-      // Update node status to completed
-      setNodes(nds => nds.map(n => 
-        n.id === node.id 
-          ? { ...n, data: { ...n.data, status: 'completed', result } }
-          : n
-      ));
-
-      setExecution(prev => ({
-        ...prev,
-        results: { ...prev.results, [node.id]: result },
-        logs: [...prev.logs, {
-          timestamp: new Date(),
-          nodeId: node.id,
-          message: `${node.data.label} completed successfully`,
-          type: 'success'
-        }]
-      }));
-
-      return result;
-    } catch (error) {
-      // Update node status to error
-      setNodes(nds => nds.map(n => 
-        n.id === node.id 
-          ? { ...n, data: { ...n.data, status: 'error' } }
-          : n
-      ));
-
-      setExecution(prev => ({
-        ...prev,
-        logs: [...prev.logs, {
-          timestamp: new Date(),
-          nodeId: node.id,
-          message: `${node.data.label} failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          type: 'error'
-        }]
-      }));
-
-      throw error;
-    }
-  };
-
-  const executeAgentNode = async (node: Node<NodeData>) => {
-    const agentId = node.data.config?.agentId;
-    const message = node.data.config?.message || 'Execute task';
-    
-    if (!agentId) {
-      throw new Error('No agent selected for this node');
-    }
-
-    const agent = agents.find(a => a.id === agentId);
-    if (!agent) {
-      throw new Error('Selected agent not found');
-    }
-
-    // Execute the agent
-    const request = {
-      model: agent.modelId,
-      messages: [
-        { role: "system", content: agent.systemPrompt },
-        { role: "user", content: message }
-      ],
-      temperature: agent.temperature,
-      maxTokens: agent.maxTokens
-    };
-
-    const response = await clientAIProviderService.sendChatRequest(agent.providerId, request);
-    return {
-      success: true,
-      response: response.choices[0].message.content,
-      agent: agent.name
-    };
-  };
-
-  const executeToolNode = async (node: Node<NodeData>) => {
-    const toolType = node.data.config?.toolType;
-    
-    switch (toolType) {
-      case 'http':
-        const url = node.data.config?.url;
-        const method = node.data.config?.method || 'GET';
-        
-        if (!url) throw new Error('No URL configured for HTTP tool');
-        
-        const response = await fetch(url, { method });
+      if (response.ok) {
         const data = await response.json();
-        
-        return {
-          success: true,
-          data,
-          statusCode: response.status
-        };
-        
-      case 'function':
-        // Execute custom function
-        const functionCode = node.data.config?.functionCode;
-        if (!functionCode) throw new Error('No function code provided');
-        
-        // Simple function execution (in production, use a sandboxed environment)
-        const func = new Function('input', functionCode);
-        const result = func(execution.results);
-        
-        return {
-          success: true,
-          result
-        };
-        
-      default:
-        return {
-          success: true,
-          message: 'Tool executed'
-        };
-    }
-  };
-
-  const executeDecisionNode = async (node: Node<NodeData>) => {
-    const decisionType = node.data.config?.decisionType;
-    const condition = node.data.config?.condition;
-    
-    // Simple condition evaluation
-    if (condition) {
-      // In production, use a proper expression evaluator
-      const result = eval(condition.replace(/\$\{(\w+)\}/g, (match, key) => {
-        return JSON.stringify(execution.results[key] || null);
-      }));
-      
-      return {
-        success: true,
-        decision: result,
-        condition
-      };
-    }
-    
-    return {
-      success: true,
-      decision: true
-    };
-  };
-
-  const executeDocumentNode = async (node: Node<NodeData>) => {
-    // Process document (placeholder for real document processing)
-    return {
-      success: true,
-      message: 'Document processed',
-      extractedData: {
-        entities: ['Sample Entity'],
-        summary: 'Document summary'
+        setWorkflows(workflows.map(w => w.id === data.workflow.id ? data.workflow : w));
+        setSelectedWorkflow(data.workflow);
+        toast({
+          title: "Success",
+          description: "Workflow saved successfully",
+        });
+      } else {
+        const error = await response.json();
+        throw new Error(error.message);
       }
-    };
-  };
-
-  const executeDataNode = async (node: Node<NodeData>) => {
-    const dataSource = node.data.config?.dataSource;
-    
-    // Fetch data from configured source
-    return {
-      success: true,
-      data: {
-        source: dataSource,
-        records: []
-      }
-    };
-  };
-
-  const stopExecution = () => {
-    setExecution(prev => ({
-      ...prev,
-      status: 'error',
-      endTime: new Date(),
-      logs: [...prev.logs, {
-        timestamp: new Date(),
-        nodeId: 'system',
-        message: 'Workflow execution stopped by user',
-        type: 'info'
-      }]
-    }));
-
-    // Reset all node statuses
-    setNodes(nds => nds.map(node => ({
-      ...node,
-      data: { ...node.data, status: 'idle' }
-    })));
-  };
-
-  const getNodeStatusColor = (status?: string) => {
-    switch (status) {
-      case 'running': return 'border-yellow-500 bg-yellow-50';
-      case 'completed': return 'border-green-500 bg-green-50';
-      case 'error': return 'border-red-500 bg-red-50';
-      default: return 'border-gray-300 bg-white';
+    } catch (error) {
+      console.error('Error saving workflow:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to save workflow",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
   };
+
+  const executeWorkflow = async (workflowId: string) => {
+    try {
+      setExecuting(workflowId);
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/workflows/execute', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          workflowId,
+          initialContext: {}
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setExecutionResult(data);
+        
+        // Update workflow execution count
+        setWorkflows(workflows.map(w => 
+          w.id === workflowId 
+            ? { ...w, executionCount: w.executionCount + 1, lastExecuted: new Date().toISOString() }
+            : w
+        ));
+
+        toast({
+          title: data.success ? "Execution Successful" : "Execution Failed",
+          description: data.success ? "Workflow executed successfully" : data.error,
+          variant: data.success ? "default" : "destructive",
+        });
+      } else {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      console.error('Error executing workflow:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to execute workflow",
+        variant: "destructive",
+      });
+    } finally {
+      setExecuting(null);
+    }
+  };
+
+  const loadWorkflow = (workflow: Workflow) => {
+    setSelectedWorkflow(workflow);
+    setNodes(workflow.nodes || []);
+    setEdges(workflow.edges || []);
+  };
+
+  const addNode = () => {
+    if (!newNode.label) {
+      toast({
+        title: "Validation Error",
+        description: "Node label is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const id = `${newNode.type}_${Date.now()}`;
+    const position = { x: Math.random() * 400, y: Math.random() * 400 };
+    
+    let nodeData: any = {
+      label: newNode.label,
+    };
+
+    if (newNode.type === 'agent') {
+      if (!newNode.agentId) {
+        toast({
+          title: "Validation Error",
+          description: "Agent selection is required",
+          variant: "destructive",
+        });
+        return;
+      }
+      const agent = agents.find(a => a.id === newNode.agentId);
+      nodeData.agentId = newNode.agentId;
+      nodeData.agentName = agent?.name;
+      nodeData.prompt = newNode.prompt;
+    } else if (newNode.type === 'decision') {
+      nodeData.condition = newNode.condition;
+    }
+
+    const newNodeObj: Node = {
+      id,
+      type: newNode.type,
+      position,
+      data: nodeData,
+    };
+
+    setNodes((nds) => nds.concat(newNodeObj));
+    setNewNode({ type: 'agent', label: '', agentId: '', prompt: '', condition: '' });
+    setShowNodeDialog(false);
+  };
+
+  const onConnect = useCallback(
+    (params: Connection) => setEdges((eds) => addEdge({
+      ...params,
+      markerEnd: { type: MarkerType.ArrowClosed },
+    }, eds)),
+    [setEdges]
+  );
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} hours ago`;
+    return `${Math.floor(diffInMinutes / 1440)} days ago`;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      {/* Header */}
-      <div className="flex justify-between items-center p-4 border-b">
-        <div className="flex flex-col">
-          <Input
-            value={workflowName}
-            onChange={(e) => setWorkflowName(e.target.value)}
-            className="text-xl font-bold bg-transparent border-none h-auto p-0 focus-visible:ring-0"
-          />
-          <Input
-            value={workflowDescription}
-            onChange={(e) => setWorkflowDescription(e.target.value)}
-            placeholder="Add workflow description..."
-            className="text-sm text-muted-foreground bg-transparent border-none h-auto p-0 focus-visible:ring-0"
-          />
-        </div>
-        <div className="flex gap-2 items-center">
-          {execution.status === 'running' && (
-            <Badge variant="secondary" className="animate-pulse">
-              <div className="w-2 h-2 bg-yellow-500 rounded-full mr-2"></div>
-              Running...
-            </Badge>
-          )}
-          <GuideTooltip content="Save your workflow configuration">
-            <Button variant="outline" onClick={saveWorkflow}>
-              <Save className="h-4 w-4 mr-2" />
-              Save
-            </Button>
-          </GuideTooltip>
-          <GuideTooltip content="Execute the workflow with current configuration">
-            <Button 
-              onClick={execution.status === 'running' ? stopExecution : executeWorkflow} 
-              disabled={execution.status === 'running' && !execution.currentNode}
-              variant={execution.status === 'running' ? "destructive" : "default"}
-            >
-              {execution.status === 'running' ? (
-                <>
-                  <StopCircle className="h-4 w-4 mr-2" />
-                  Stop
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4 mr-2" />
-                  Run Workflow
-                </>
-              )}
-            </Button>
-          </GuideTooltip>
-        </div>
-      </div>
-
-      {/* Execution Status */}
-      {execution.status !== 'idle' && (
-        <div className="px-4 py-2 border-b bg-muted/50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {execution.status === 'running' && <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>}
-              {execution.status === 'completed' && <CheckCircle className="w-4 h-4 text-green-500" />}
-              {execution.status === 'error' && <AlertCircle className="w-4 h-4 text-red-500" />}
-              <span className="text-sm font-medium capitalize">{execution.status}</span>
-              {execution.currentNode && (
-                <span className="text-sm text-muted-foreground">
-                  - {nodes.find(n => n.id === execution.currentNode)?.data.label}
-                </span>
-              )}
-            </div>
-            {execution.startTime && (
-              <span className="text-xs text-muted-foreground">
-                {execution.endTime 
-                  ? `Completed in ${Math.round((execution.endTime.getTime() - execution.startTime.getTime()) / 1000)}s`
-                  : `Running for ${Math.round((new Date().getTime() - execution.startTime.getTime()) / 1000)}s`
-                }
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar - Node Types */}
-        <div className="w-64 border-r p-4 overflow-y-auto">
-          <GuideTooltip content="Drag these node types to build your workflow">
-            <h3 className="font-medium mb-4" data-guide="node-types">Node Types</h3>
-          </GuideTooltip>
-          <div className="space-y-2">
-            {nodeTypes.map((nodeType) => (
-              <GuideTooltip 
-                key={nodeType.id}
-                content={`Add ${nodeType.label} node to your workflow`}
-              >
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => addNode(nodeType.id)}
-                >
-                  {nodeType.icon}
-                  <span className="ml-2">{nodeType.label}</span>
+    <div className="h-screen bg-white flex">
+      {/* Sidebar */}
+      <div className="w-80 border-r bg-gray-50 flex flex-col">
+        <div className="p-4 border-b">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold">Workflows</h2>
+            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="h-4 w-4 mr-1" />
+                  New
                 </Button>
-              </GuideTooltip>
-            ))}
-          </div>
-
-          {/* Saved Workflows */}
-          {savedWorkflows.length > 0 && (
-            <div className="mt-6">
-              <h3 className="font-medium mb-2">Saved Workflows</h3>
-              <div className="space-y-1">
-                {savedWorkflows.slice(0, 5).map((workflow) => (
-                  <div key={workflow.id} className="text-xs p-2 bg-muted rounded">
-                    <div className="font-medium truncate">{workflow.name}</div>
-                    <div className="text-muted-foreground">
-                      {new Date(workflow.createdAt).toLocaleDateString()}
-                    </div>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create New Workflow</DialogTitle>
+                  <DialogDescription>
+                    Create a new AI workflow with custom logic
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="name">Workflow Name</Label>
+                    <Input
+                      id="name"
+                      value={newWorkflow.name}
+                      onChange={(e) => setNewWorkflow({ ...newWorkflow, name: e.target.value })}
+                      placeholder="e.g., Document Analysis Pipeline"
+                    />
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Main Canvas and Properties Panel */}
-        <div className="flex-1 flex flex-col">
-          <Tabs
-            value={activeTab}
-            onValueChange={setActiveTab}
-            className="flex-1 flex flex-col"
-          >
-            <div className="border-b px-4">
-              <TabsList>
-                <GuideTooltip content="Visual workflow builder canvas">
-                  <TabsTrigger value="canvas" data-guide="workflow-canvas">Canvas</TabsTrigger>
-                </GuideTooltip>
-                <GuideTooltip content="Configure selected node properties">
-                  <TabsTrigger value="properties">Properties</TabsTrigger>
-                </GuideTooltip>
-                <GuideTooltip content="View execution logs and results">
-                  <TabsTrigger value="execution">Execution</TabsTrigger>
-                </GuideTooltip>
-                <GuideTooltip content="Workflow execution and notification settings">
-                  <TabsTrigger value="settings">Settings</TabsTrigger>
-                </GuideTooltip>
-              </TabsList>
-            </div>
-
-            <TabsContent value="canvas" className="flex-1 p-0 m-0">
-              <div className="h-full w-full" data-guide="workflow-canvas">
-                <ReactFlow
-                  nodes={nodes.map(node => ({
-                    ...node,
-                    className: getNodeStatusColor(node.data.status)
-                  }))}
-                  edges={edges}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
-                  onConnect={onConnect}
-                  onNodeClick={onNodeClick}
-                  fitView
-                >
-                  <Background />
-                  <Controls />
-                  <MiniMap />
-                  <Panel position="top-right">
-                    <GuideTooltip content="Open node properties panel">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setActiveTab("properties")}
-                      >
-                        <Settings className="h-4 w-4 mr-2" />
-                        Properties
-                      </Button>
-                    </GuideTooltip>
-                  </Panel>
-                </ReactFlow>
-              </div>
-            </TabsContent>
-
-            <TabsContent
-              value="properties"
-              className="flex-1 p-4 overflow-y-auto"
-            >
-              {selectedNode ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex justify-between items-center">
-                      <span>Node Properties</span>
-                      <div className="flex gap-2">
-                        {selectedNode.data.status && (
-                          <Badge variant={
-                            selectedNode.data.status === 'completed' ? 'default' :
-                            selectedNode.data.status === 'running' ? 'secondary' :
-                            selectedNode.data.status === 'error' ? 'destructive' : 'outline'
-                          }>
-                            {selectedNode.data.status}
-                          </Badge>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={deleteSelectedNode}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                  <div>
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea
+                      id="description"
+                      value={newWorkflow.description}
+                      onChange={(e) => setNewWorkflow({ ...newWorkflow, description: e.target.value })}
+                      placeholder="Describe what this workflow does..."
+                      rows={3}
+                    />
+                  </div>
+                  <div className="flex justify-end space-x-2">
+                    <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={createWorkflow} disabled={saving}>
+                      {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      Create
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+          
+          {selectedWorkflow && (
+            <div className="space-y-2">
+              <div className="flex space-x-2">
+                <Button size="sm" onClick={saveWorkflow} disabled={saving}>
+                  {saving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Save className="h-3 w-3 mr-1" />}
+                  Save
+                </Button>
+                <Button size="sm" onClick={() => executeWorkflow(selectedWorkflow.id)} disabled={executing === selectedWorkflow.id}>
+                  {executing === selectedWorkflow.id ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+                  Run
+                </Button>
+                <Dialog open={showNodeDialog} onOpenChange={setShowNodeDialog}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Plus className="h-3 w-3 mr-1" />
+                      Node
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add Node</DialogTitle>
+                      <DialogDescription>
+                        Add a new node to your workflow
+                      </DialogDescription>
+                    </DialogHeader>
                     <div className="space-y-4">
                       <div>
-                        <Label htmlFor="node-label">Label</Label>
-                        <Input
-                          id="node-label"
-                          value={selectedNode.data.label || ""}
-                          onChange={(e) =>
-                            updateNodeData("label", e.target.value)
-                          }
-                        />
+                        <Label htmlFor="nodeType">Node Type</Label>
+                        <Select value={newNode.type} onValueChange={(value) => setNewNode({ ...newNode, type: value })}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="input">Input</SelectItem>
+                            <SelectItem value="agent">AI Agent</SelectItem>
+                            <SelectItem value="decision">Decision</SelectItem>
+                            <SelectItem value="output">Output</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-
                       <div>
-                        <Label htmlFor="node-description">Description</Label>
+                        <Label htmlFor="nodeLabel">Label</Label>
                         <Input
-                          id="node-description"
-                          value={selectedNode.data.description || ""}
-                          onChange={(e) =>
-                            updateNodeData("description", e.target.value)
-                          }
+                          id="nodeLabel"
+                          value={newNode.label}
+                          onChange={(e) => setNewNode({ ...newNode, label: e.target.value })}
+                          placeholder="Node name"
                         />
                       </div>
-
-                      <Separator />
-
-                      {selectedNode.data.type === "agent" && (
-                        <div className="space-y-4">
+                      {newNode.type === 'agent' && (
+                        <>
                           <div>
-                            <Label htmlFor="agent-select">Select Agent</Label>
-                            <Select
-                              value={selectedNode.data.config?.agentId || ""}
-                              onValueChange={(value) =>
-                                updateNodeData("config", JSON.stringify({
-                                  ...selectedNode.data.config,
-                                  agentId: value
-                                }))
-                              }
-                            >
+                            <Label htmlFor="agentSelect">Select Agent</Label>
+                            <Select value={newNode.agentId} onValueChange={(value) => setNewNode({ ...newNode, agentId: value })}>
                               <SelectTrigger>
-                                <SelectValue placeholder="Select agent" />
+                                <SelectValue placeholder="Choose an agent" />
                               </SelectTrigger>
                               <SelectContent>
-                                {agents.map(agent => (
+                                {agents.filter(agent => agent.status === 'active').map((agent) => (
                                   <SelectItem key={agent.id} value={agent.id}>
                                     {agent.name}
                                   </SelectItem>
@@ -846,204 +546,168 @@ const WorkflowBuilder = () => {
                             </Select>
                           </div>
                           <div>
-                            <Label htmlFor="agent-message">Message/Task</Label>
-                            <Input
-                              id="agent-message"
-                              value={selectedNode.data.config?.message || ""}
-                              onChange={(e) =>
-                                updateNodeData("config", JSON.stringify({
-                                  ...selectedNode.data.config,
-                                  message: e.target.value
-                                }))
-                              }
-                              placeholder="Task for the agent to execute"
+                            <Label htmlFor="prompt">Custom Prompt (Optional)</Label>
+                            <Textarea
+                              id="prompt"
+                              value={newNode.prompt}
+                              onChange={(e) => setNewNode({ ...newNode, prompt: e.target.value })}
+                              placeholder="Additional instructions for this step..."
+                              rows={3}
                             />
                           </div>
-                        </div>
+                        </>
                       )}
-
-                      {selectedNode.data.type === "tool" && (
+                      {newNode.type === 'decision' && (
                         <div>
-                          <Label htmlFor="tool-type">Tool Type</Label>
-                          <Select
-                            value={selectedNode.data.config?.toolType || ""}
-                            onValueChange={(value) =>
-                              updateNodeData("config", JSON.stringify({
-                                ...selectedNode.data.config,
-                                toolType: value
-                              }))
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select tool type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="http">HTTP Request</SelectItem>
-                              <SelectItem value="function">Function</SelectItem>
-                              <SelectItem value="openapi">OpenAPI</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-
-                      {selectedNode.data.type === "decision" && (
-                        <div>
-                          <Label htmlFor="decision-condition">Condition</Label>
+                          <Label htmlFor="condition">Condition</Label>
                           <Input
-                            id="decision-condition"
-                            value={selectedNode.data.config?.condition || ""}
-                            onChange={(e) =>
-                              updateNodeData("config", JSON.stringify({
-                                ...selectedNode.data.config,
-                                condition: e.target.value
-                              }))
-                            }
-                            placeholder="e.g., ${previousResult.success} === true"
+                            id="condition"
+                            value={newNode.condition}
+                            onChange={(e) => setNewNode({ ...newNode, condition: e.target.value })}
+                            placeholder="e.g., result contains 'success'"
                           />
                         </div>
                       )}
-
-                      {selectedNode.data.result && (
-                        <div>
-                          <Label>Execution Result</Label>
-                          <div className="p-3 bg-muted rounded-md">
-                            <pre className="text-xs whitespace-pre-wrap">
-                              {JSON.stringify(selectedNode.data.result, null, 2)}
-                            </pre>
-                          </div>
-                        </div>
-                      )}
+                      <div className="flex justify-end space-x-2">
+                        <Button variant="outline" onClick={() => setShowNodeDialog(false)}>
+                          Cancel
+                        </Button>
+                        <Button onClick={addNode}>
+                          Add Node
+                        </Button>
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                  <p>Select a node to view and edit its properties</p>
-                </div>
-              )}
-            </TabsContent>
+                  </DialogContent>
+                </Dialog>
+              </div>
+              <div className="text-sm text-gray-600">
+                <p className="font-medium">{selectedWorkflow.name}</p>
+                <p>{selectedWorkflow.description}</p>
+              </div>
+            </div>
+          )}
+        </div>
 
-            <TabsContent
-              value="execution"
-              className="flex-1 p-4 overflow-y-auto"
-            >
-              <Card>
-                <CardHeader>
-                  <CardTitle>Execution Logs</CardTitle>
+        <div className="flex-1 overflow-auto p-4">
+          <div className="space-y-3">
+            {workflows.map((workflow) => (
+              <Card 
+                key={workflow.id} 
+                className={`cursor-pointer transition-colors ${selectedWorkflow?.id === workflow.id ? 'ring-2 ring-blue-500' : ''}`}
+                onClick={() => loadWorkflow(workflow)}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm">{workflow.name}</CardTitle>
+                    <Badge variant={
+                      workflow.status === 'active' ? 'default' :
+                      workflow.status === 'error' ? 'destructive' : 'secondary'
+                    }>
+                      {workflow.status}
+                    </Badge>
+                  </div>
                 </CardHeader>
-                <CardContent>
-                  {execution.logs.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-4">
-                      No execution logs yet. Run the workflow to see logs.
-                    </p>
-                  ) : (
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {execution.logs.map((log, index) => (
-                        <div key={index} className={`p-2 rounded text-sm ${
-                          log.type === 'error' ? 'bg-red-50 text-red-700' :
-                          log.type === 'success' ? 'bg-green-50 text-green-700' :
-                          'bg-blue-50 text-blue-700'
-                        }`}>
-                          <div className="flex justify-between items-start">
-                            <span className="font-medium">{log.message}</span>
-                            <span className="text-xs opacity-70">
-                              {log.timestamp.toLocaleTimeString()}
-                            </span>
-                          </div>
-                          {log.nodeId !== 'system' && (
-                            <div className="text-xs opacity-70 mt-1">
-                              Node: {nodes.find(n => n.id === log.nodeId)?.data.label || log.nodeId}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <CardContent className="pt-0">
+                  <p className="text-xs text-gray-600 mb-2">{workflow.description}</p>
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Runs: {workflow.executionCount}</span>
+                    <span>{formatTimeAgo(workflow.updatedAt)}</span>
+                  </div>
                 </CardContent>
               </Card>
-            </TabsContent>
-
-            <TabsContent
-              value="settings"
-              className="flex-1 p-4 overflow-y-auto"
-            >
-              <Card>
-                <CardHeader>
-                  <CardTitle>Workflow Settings</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Accordion type="single" collapsible className="w-full">
-                    <AccordionItem value="execution">
-                      <AccordionTrigger>Execution Settings</AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-4">
-                          <div>
-                            <Label htmlFor="timeout">Timeout (seconds)</Label>
-                            <Input
-                              id="timeout"
-                              type="number"
-                              defaultValue="300"
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="retries">Max Retries</Label>
-                            <Input
-                              id="retries"
-                              type="number"
-                              defaultValue="3"
-                            />
-                          </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-
-                    <AccordionItem value="notifications">
-                      <AccordionTrigger>Notifications</AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-4">
-                          <div className="flex items-center space-x-2">
-                            <input type="checkbox" id="notify-completion" />
-                            <Label htmlFor="notify-completion">
-                              Notify on completion
-                            </Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <input type="checkbox" id="notify-failure" />
-                            <Label htmlFor="notify-failure">
-                              Notify on failure
-                            </Label>
-                          </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-
-                    <AccordionItem value="permissions">
-                      <AccordionTrigger>Permissions</AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-4">
-                          <div>
-                            <Label htmlFor="visibility">Visibility</Label>
-                            <Select defaultValue="private">
-                              <SelectTrigger id="visibility">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="private">Private</SelectItem>
-                                <SelectItem value="team">Team</SelectItem>
-                                <SelectItem value="public">Public</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* Main Canvas */}
+      <div className="flex-1 relative">
+        {selectedWorkflow ? (
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            nodeTypes={nodeTypes}
+            fitView
+          >
+            <Background />
+            <Controls />
+            <MiniMap />
+          </ReactFlow>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <GitBranch className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-medium text-gray-900 mb-2">No Workflow Selected</h3>
+              <p className="text-gray-500 mb-4">Create or select a workflow to start building</p>
+              <Button onClick={() => setShowCreateDialog(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Your First Workflow
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Execution Results Dialog */}
+      <Dialog open={!!executionResult} onOpenChange={() => setExecutionResult(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Workflow Execution Results</DialogTitle>
+            <DialogDescription>
+              Results from the workflow execution
+            </DialogDescription>
+          </DialogHeader>
+          {executionResult && (
+            <div className="space-y-4">
+              <div className="flex items-center space-x-2">
+                {executionResult.success ? (
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-500" />
+                )}
+                <span className="font-medium">
+                  {executionResult.success ? 'Execution Successful' : 'Execution Failed'}
+                </span>
+                <span className="text-sm text-gray-500">
+                  ({executionResult.executionTime}ms)
+                </span>
+              </div>
+
+              {executionResult.result && (
+                <div>
+                  <h4 className="font-medium mb-2">Final Result</h4>
+                  <div className="bg-gray-50 p-3 rounded text-sm">
+                    {executionResult.result}
+                  </div>
+                </div>
+              )}
+
+              {executionResult.executionLog && (
+                <div>
+                  <h4 className="font-medium mb-2">Execution Log</h4>
+                  <div className="space-y-2 max-h-60 overflow-auto">
+                    {executionResult.executionLog.map((log: any, index: number) => (
+                      <div key={index} className="flex items-center space-x-2 text-sm">
+                        {log.success ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <AlertCircle className="h-4 w-4 text-red-500" />
+                        )}
+                        <span className="font-medium">{log.nodeLabel}</span>
+                        <span className="text-gray-500">({log.executionTime}ms)</span>
+                        {log.error && <span className="text-red-500 text-xs">{log.error}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

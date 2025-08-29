@@ -28,8 +28,8 @@ export async function POST(
         model: aiModels
       })
       .from(agents)
-      .leftJoin(aiProviders, eq(agents.providerId, aiProviders.id))
-      .leftJoin(aiModels, eq(agents.modelId, aiModels.id))
+      .leftJoin(aiProviders, eq(agents.provider, aiProviders.id))
+      .leftJoin(aiModels, eq(agents.model, aiModels.id))
       .where(eq(agents.id, agentId))
       .limit(1);
 
@@ -56,6 +56,7 @@ export async function POST(
     await db.insert(agentExecutions).values({
       id: executionId,
       agentId: agent.id,
+      userId: agent.userId, // Use the agent's userId
       input: { message },
       status: 'running',
       startedAt: startTime
@@ -98,7 +99,7 @@ export async function POST(
       await db.update(agents)
         .set({
           totalRuns: agent.totalRuns + 1,
-          lastRunAt: completedAt,
+          lastRun: completedAt,
           status: 'active',
           updatedAt: completedAt
         })
@@ -107,9 +108,11 @@ export async function POST(
       // Log activity
       await db.insert(activityFeed).values({
         id: nanoid(),
+        userId: agent.userId,
         type: 'agent_executed',
         title: `Agent "${agent.name}" executed successfully`,
         description: `Processed message in ${duration}ms`,
+        message: `Agent execution completed`,
         entityType: 'agent',
         entityId: agent.id,
         createdAt: completedAt
@@ -139,7 +142,7 @@ export async function POST(
   } catch (error) {
     console.error('Agent execution error:', error);
     return NextResponse.json(
-      { 
+      {
         success: false,
         message: error instanceof Error ? error.message : 'Execution failed'
       },

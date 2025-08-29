@@ -101,33 +101,33 @@ Score should be 0-100 based on how well the vendor matches the requirements.`;
     };
   } catch (error) {
     console.error('AI analysis error:', error);
-    
+
     // Fallback scoring algorithm
     let score = 0;
-    
+
     // Base score from rating (0-25 points)
     score += (vendor.rating / 5) * 25;
-    
+
     // On-time delivery (0-25 points)
     score += (vendor.onTimeDelivery / 100) * 25;
-    
+
     // Quality score (0-25 points)
     score += (vendor.qualityScore / 100) * 25;
-    
+
     // Price competitiveness (0-25 points)
     if (vendor.avgPriceVsMarket <= -10) score += 25; // Very competitive
     else if (vendor.avgPriceVsMarket <= 0) score += 20; // Competitive
     else if (vendor.avgPriceVsMarket <= 10) score += 15; // Fair
     else score += 10; // Expensive
-    
+
     // Performance trend bonus/penalty
     if (vendor.performanceTrend === 'improving') score += 5;
     else if (vendor.performanceTrend === 'declining') score -= 5;
-    
+
     // Experience bonus
     if (vendor.completedOrders > 100) score += 5;
     else if (vendor.completedOrders > 50) score += 3;
-    
+
     return {
       vendor,
       score: Math.min(100, Math.max(0, score)),
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
 
     // Get vendors based on category
     let vendorQuery = db.select().from(vendors).where(eq(vendors.userId, userId));
-    
+
     if (category && category !== 'all') {
       vendorQuery = vendorQuery.where(and(eq(vendors.userId, userId), eq(vendors.category, category)));
     }
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
 
     // Analyze each vendor with AI
     const vendorAnalyses: VendorScore[] = [];
-    
+
     for (const vendor of availableVendors) {
       try {
         const analysis = await analyzeVendorWithAI(vendor, requirements, agentId);

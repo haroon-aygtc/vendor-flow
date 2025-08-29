@@ -1,745 +1,557 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
+import React, { useState, useEffect, useCallback } from 'react';
+import { 
+  Upload, 
+  FileText, 
+  File, 
+  Trash2, 
+  Download, 
+  Eye, 
+  Loader2,
+  CheckCircle,
   AlertCircle,
-  FileText,
-  Upload,
-  X,
-  FileSpreadsheet,
-  FileCode,
-  Download,
-  Eye,
-} from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Progress } from "@/components/ui/progress";
-import { GuideTooltip } from "@/components/ui/user-guide";
-import { clientAIProviderService } from '@/services/clientAIProviderService';
-import { Badge } from "@/components/ui/badge";
+  Clock,
+  Bot,
+  Search
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
+import { useToast } from '@/components/ui/use-toast';
+import Cookies from 'js-cookie';
 
-interface DocumentProcessorProps {
-  onProcessComplete?: (result: any) => void;
-}
-
-interface ProcessedDocument {
+interface Document {
   id: string;
   name: string;
   type: string;
   size: number;
-  processedAt: Date;
-  agentUsed: string;
-  result: any;
+  url: string;
+  status: 'uploaded' | 'processing' | 'completed' | 'error';
+  extractedData?: any;
+  processingResults?: any;
+  createdAt: string;
+  updatedAt: string;
 }
 
-const DocumentProcessor = ({
-  onProcessComplete = () => {},
-}: DocumentProcessorProps) => {
-  const [activeTab, setActiveTab] = useState("upload");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [filePreview, setFilePreview] = useState<string | null>(null);
-  const [fileType, setFileType] = useState<string | null>(null);
-  const [processing, setProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [processedDocuments, setProcessedDocuments] = useState<ProcessedDocument[]>([]);
-  const [currentResult, setCurrentResult] = useState<any>(null);
+interface Agent {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+}
+
+const DocumentProcessor = () => {
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState<string | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
-    loadAgents();
-    loadProcessedDocuments();
+    fetchDocuments();
+    fetchAgents();
   }, []);
 
-  const loadAgents = () => {
+  const fetchDocuments = async () => {
     try {
-      const saved = localStorage.getItem('ai-agents');
-      if (saved) {
-        const agentsData = JSON.parse(saved);
-        setAgents(agentsData.filter((a: any) => a.status === 'active'));
-      }
-    } catch (error) {
-      console.error('Failed to load agents:', error);
-    }
-  };
-
-  const loadProcessedDocuments = () => {
-    try {
-      const saved = localStorage.getItem('processed-documents');
-      if (saved) {
-        setProcessedDocuments(JSON.parse(saved));
-      }
-    } catch (error) {
-      console.error('Failed to load processed documents:', error);
-    }
-  };
-
-  const saveProcessedDocument = (document: ProcessedDocument) => {
-    try {
-      const existing = JSON.parse(localStorage.getItem('processed-documents') || '[]');
-      const updated = [document, ...existing];
-      localStorage.setItem('processed-documents', JSON.stringify(updated));
-      setProcessedDocuments(updated);
-
-      // Update dashboard stats
-      const activities = JSON.parse(localStorage.getItem('recent-activities') || '[]');
-      activities.unshift({
-        id: `doc-process-${Date.now()}`,
-        type: 'success',
-        message: `Document "${document.name}" processed successfully`,
-        timestamp: new Date()
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/documents', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
-      localStorage.setItem('recent-activities', JSON.stringify(activities.slice(0, 50)));
+
+      if (response.ok) {
+        const data = await response.json();
+        setDocuments(data.documents || []);
+      }
     } catch (error) {
-      console.error('Failed to save processed document:', error);
+      console.error('Error fetching documents:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch documents",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setError(null);
-    const file = e.target.files?.[0];
+  const fetchAgents = async () => {
+    try {
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/agents', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAgents(data.agents || []);
+      }
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+    }
+  };
+
+  const handleFileUpload = useCallback(async (files: FileList) => {
+    if (!selectedAgent) {
+      toast({
+        title: "Validation Error",
+        description: "Please select an agent for processing",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const file = files[0];
     if (!file) return;
 
-    // Check file type
-    const fileExtension = file.name.split(".").pop()?.toLowerCase();
-    if (!["pdf", "csv", "md", "txt", "docx"].includes(fileExtension || "")) {
-      setError(
-        "Unsupported file type. Please upload PDF, CSV, Markdown, TXT, or DOCX files.",
-      );
+    // Validate file type
+    const allowedTypes = ['application/pdf', 'text/csv', 'text/markdown', 'text/plain'];
+    if (!allowedTypes.includes(file.type) && !file.name.endsWith('.md')) {
+      toast({
+        title: "Invalid File Type",
+        description: "Only PDF, CSV, Markdown, and text files are supported",
+        variant: "destructive",
+      });
       return;
     }
 
-    // Check file size (max 10MB)
+    // Validate file size (10MB limit)
     if (file.size > 10 * 1024 * 1024) {
-      setError("File size too large. Please upload files smaller than 10MB.");
+      toast({
+        title: "File Too Large",
+        description: "File size must be less than 10MB",
+        variant: "destructive",
+      });
       return;
     }
-
-    setSelectedFile(file);
-    setFileType(fileExtension || null);
-
-    // Create preview for supported file types
-    if (fileExtension === "pdf" || fileExtension === "docx") {
-      setFilePreview(null);
-    } else if (
-      fileExtension === "csv" ||
-      fileExtension === "md" ||
-      fileExtension === "txt"
-    ) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const content = e.target?.result as string;
-        // Limit preview to first 1000 characters
-        setFilePreview(content.substring(0, 1000) + (content.length > 1000 ? '...' : ''));
-      };
-      reader.readAsText(file);
-    }
-
-    setActiveTab("preview");
-  };
-
-  const handleRemoveFile = () => {
-    setSelectedFile(null);
-    setFilePreview(null);
-    setFileType(null);
-    setActiveTab("upload");
-    setError(null);
-    setCurrentResult(null);
-  };
-
-  const handleProcessDocument = async () => {
-    if (!selectedFile || !selectedAgent) {
-      setError(
-        "Please select both a file and an agent to process the document.",
-      );
-      return;
-    }
-
-    setProcessing(true);
-    setProgress(0);
-    setError(null);
 
     try {
-      const agent = agents.find(a => a.id === selectedAgent);
-      if (!agent) {
-        throw new Error('Selected agent not found');
-      }
+      setUploading(true);
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('agentId', selectedAgent);
 
-      // Read file content
-      let fileContent = '';
-      if (fileType === 'pdf' || fileType === 'docx') {
-        fileContent = `[${fileType.toUpperCase()} Document: ${selectedFile.name}]\nNote: Binary document processing would require specialized libraries in production.`;
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/documents/process', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDocuments([data.document, ...documents]);
+        setShowUploadDialog(false);
+        toast({
+          title: "Success",
+          description: "Document uploaded and processed successfully",
+        });
       } else {
-        fileContent = await readFileAsText(selectedFile);
+        const error = await response.json();
+        throw new Error(error.message);
       }
-
-      setProgress(25);
-
-      // Prepare AI prompt for document analysis
-      const analysisPrompt = `Please analyze the following document and provide:
-1. A comprehensive summary
-2. Key entities mentioned (people, organizations, locations, etc.)
-3. Main topics and themes
-4. Important insights or findings
-5. Any actionable items or recommendations
-
-Document content:
-${fileContent.substring(0, 4000)}${fileContent.length > 4000 ? '\n[Content truncated for analysis]' : ''}`;
-
-      setProgress(50);
-
-      // Send to AI agent for processing
-      const request = {
-        model: agent.modelId,
-        messages: [
-          { role: "system", content: agent.systemPrompt + "\n\nYou are analyzing a document. Provide structured, detailed analysis." },
-          { role: "user", content: analysisPrompt }
-        ],
-        temperature: agent.temperature,
-        maxTokens: Math.min(agent.maxTokens, 2000)
-      };
-
-      setProgress(75);
-
-      const response = await clientAIProviderService.sendChatRequest(agent.providerId, request);
-      const analysisResult = response.choices[0].message.content;
-
-      setProgress(90);
-
-      // Parse the AI response to extract structured data
-      const result = parseAnalysisResult(analysisResult, selectedFile, agent);
-      
-      setProgress(100);
-
-      // Save processed document
-      const processedDoc: ProcessedDocument = {
-        id: `doc-${Date.now()}`,
-        name: selectedFile.name,
-        type: fileType || 'unknown',
-        size: selectedFile.size,
-        processedAt: new Date(),
-        agentUsed: agent.name,
-        result
-      };
-
-      saveProcessedDocument(processedDoc);
-      setCurrentResult(result);
-      onProcessComplete(result);
-      
-      setTimeout(() => {
-        setProcessing(false);
-        setActiveTab("results");
-      }, 500);
-
     } catch (error) {
-      setProcessing(false);
-      setError(`Processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      console.error('Document processing error:', error);
+      console.error('Error uploading document:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to upload document",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+    }
+  }, [selectedAgent, documents, toast]);
+
+  const deleteDocument = async (documentId: string) => {
+    try {
+      const token = Cookies.get('auth_token');
+      const response = await fetch(`/api/documents?id=${documentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        setDocuments(documents.filter(doc => doc.id !== documentId));
+        toast({
+          title: "Success",
+          description: "Document deleted successfully",
+        });
+      } else {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete document",
+        variant: "destructive",
+      });
     }
   };
 
-  const readFileAsText = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target?.result as string);
-      reader.onerror = (e) => reject(new Error('Failed to read file'));
-      reader.readAsText(file);
-    });
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const parseAnalysisResult = (analysisText: string, file: File, agent: any) => {
-    // Extract structured data from AI analysis
-    const lines = analysisText.split('\n');
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
     
-    const result = {
-      summary: '',
-      entities: [] as string[],
-      topics: [] as string[],
-      insights: [] as string[],
-      actionItems: [] as string[],
-      rawAnalysis: analysisText,
-      metadata: {
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: fileType,
-        processedBy: agent.name,
-        processingTime: new Date().toISOString()
-      }
-    };
-
-    // Simple parsing logic (in production, use more sophisticated NLP)
-    let currentSection = '';
-    
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      
-      if (trimmed.toLowerCase().includes('summary')) {
-        currentSection = 'summary';
-        continue;
-      } else if (trimmed.toLowerCase().includes('entities') || trimmed.toLowerCase().includes('people') || trimmed.toLowerCase().includes('organizations')) {
-        currentSection = 'entities';
-        continue;
-      } else if (trimmed.toLowerCase().includes('topics') || trimmed.toLowerCase().includes('themes')) {
-        currentSection = 'topics';
-        continue;
-      } else if (trimmed.toLowerCase().includes('insights') || trimmed.toLowerCase().includes('findings')) {
-        currentSection = 'insights';
-        continue;
-      } else if (trimmed.toLowerCase().includes('action') || trimmed.toLowerCase().includes('recommendation')) {
-        currentSection = 'actionItems';
-        continue;
-      }
-      
-      // Add content to appropriate section
-      if (currentSection === 'summary' && !result.summary) {
-        result.summary = trimmed;
-      } else if (currentSection === 'entities' && (trimmed.startsWith('-') || trimmed.startsWith('•') || trimmed.match(/^\d+\./))) {
-        result.entities.push(trimmed.replace(/^[-•\d.]\s*/, ''));
-      } else if (currentSection === 'topics' && (trimmed.startsWith('-') || trimmed.startsWith('•') || trimmed.match(/^\d+\./))) {
-        result.topics.push(trimmed.replace(/^[-•\d.]\s*/, ''));
-      } else if (currentSection === 'insights' && (trimmed.startsWith('-') || trimmed.startsWith('•') || trimmed.match(/^\d+\./))) {
-        result.insights.push(trimmed.replace(/^[-•\d.]\s*/, ''));
-      } else if (currentSection === 'actionItems' && (trimmed.startsWith('-') || trimmed.startsWith('•') || trimmed.match(/^\d+\./))) {
-        result.actionItems.push(trimmed.replace(/^[-•\d.]\s*/, ''));
-      }
-    }
-
-    // Fallback: if no structured data found, extract from raw text
-    if (!result.summary) {
-      const sentences = analysisText.split('.').filter(s => s.trim().length > 20);
-      result.summary = sentences.slice(0, 2).join('.') + '.';
-    }
-
-    return result;
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} hours ago`;
+    return `${Math.floor(diffInMinutes / 1440)} days ago`;
   };
 
-  const exportResults = () => {
-    if (!currentResult) return;
-    
-    const exportData = {
-      document: selectedFile?.name,
-      processedAt: new Date().toISOString(),
-      ...currentResult
-    };
-    
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `analysis-${selectedFile?.name || 'document'}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const renderFileIcon = () => {
-    switch (fileType) {
-      case "pdf":
-        return <FileText className="h-12 w-12 text-blue-500" />;
-      case "csv":
-        return <FileSpreadsheet className="h-12 w-12 text-green-500" />;
-      case "md":
-      case "txt":
-        return <FileCode className="h-12 w-12 text-purple-500" />;
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'processing':
+        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
+      case 'error':
+        return <AlertCircle className="h-4 w-4 text-red-500" />;
       default:
-        return <FileText className="h-12 w-12 text-gray-500" />;
+        return <Clock className="h-4 w-4 text-gray-500" />;
     }
   };
 
-  const renderPreview = () => {
-    if (!selectedFile) return null;
+  const filteredDocuments = documents.filter(doc =>
+    doc.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
+  if (loading) {
     return (
-      <div className="mt-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            {renderFileIcon()}
-            <div>
-              <h3 className="font-medium">{selectedFile.name}</h3>
-              <p className="text-sm text-muted-foreground">
-                {(selectedFile.size / 1024).toFixed(2)} KB •{" "}
-                {fileType?.toUpperCase()}
-              </p>
-            </div>
-          </div>
-          <Button variant="ghost" size="sm" onClick={handleRemoveFile}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {fileType === "pdf" || fileType === "docx" ? (
-          <div className="border rounded-md p-8 flex items-center justify-center bg-muted">
-            <div className="text-center">
-              <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">
-                {fileType.toUpperCase()} preview not available. Process the document to view AI analysis.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="border rounded-md p-4 max-h-[400px] overflow-auto bg-muted">
-            <pre className="text-xs whitespace-pre-wrap font-mono">{filePreview}</pre>
-          </div>
-        )}
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
-  };
-
-  const renderResults = () => {
-    if (!currentResult) return null;
-
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Document Analysis Results</h3>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={exportResults}>
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setActiveTab("preview")}>
-              <Eye className="h-4 w-4 mr-2" />
-              View Document
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid gap-6">
-          {/* Summary */}
-          {currentResult.summary && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Summary</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">{currentResult.summary}</p>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Key Entities */}
-          {currentResult.entities && currentResult.entities.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Key Entities</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {currentResult.entities.map((entity: string, index: number) => (
-                    <Badge key={index} variant="secondary">
-                      {entity}
-                    </Badge>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Topics & Themes */}
-          {currentResult.topics && currentResult.topics.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Topics & Themes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="list-disc list-inside space-y-1">
-                  {currentResult.topics.map((topic: string, index: number) => (
-                    <li key={index} className="text-sm text-muted-foreground">{topic}</li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Key Insights */}
-          {currentResult.insights && currentResult.insights.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Key Insights</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="list-disc list-inside space-y-1">
-                  {currentResult.insights.map((insight: string, index: number) => (
-                    <li key={index} className="text-sm text-muted-foreground">{insight}</li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Action Items */}
-          {currentResult.actionItems && currentResult.actionItems.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Action Items</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="list-disc list-inside space-y-1">
-                  {currentResult.actionItems.map((item: string, index: number) => (
-                    <li key={index} className="text-sm text-muted-foreground">{item}</li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Processing Metadata */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Processing Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="font-medium">Processed by:</span>
-                  <p className="text-muted-foreground">{currentResult.metadata?.processedBy}</p>
-                </div>
-                <div>
-                  <span className="font-medium">File type:</span>
-                  <p className="text-muted-foreground">{currentResult.metadata?.fileType?.toUpperCase()}</p>
-                </div>
-                <div>
-                  <span className="font-medium">File size:</span>
-                  <p className="text-muted-foreground">
-                    {currentResult.metadata?.fileSize ? (currentResult.metadata.fileSize / 1024).toFixed(2) + ' KB' : 'Unknown'}
-                  </p>
-                </div>
-                <div>
-                  <span className="font-medium">Processed at:</span>
-                  <p className="text-muted-foreground">
-                    {currentResult.metadata?.processingTime ? new Date(currentResult.metadata.processingTime).toLocaleString() : 'Unknown'}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  };
+  }
 
   return (
-    <div className="w-full h-full bg-background">
-      <Card className="w-full">
-        <CardHeader>
-          <CardTitle>Document Processor</CardTitle>
-          <CardDescription>
-            Upload and process documents with AI agents to extract insights and
-            structured data. Supports PDF, CSV, Markdown, TXT, and DOCX files.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-4">
-              <GuideTooltip content="Upload PDF, CSV, Markdown, or text files">
-                <TabsTrigger value="upload" data-guide="document-upload">Upload</TabsTrigger>
-              </GuideTooltip>
-              <GuideTooltip content="Preview your document before processing">
-                <TabsTrigger value="preview" disabled={!selectedFile}>
-                  Preview
-                </TabsTrigger>
-              </GuideTooltip>
-              <GuideTooltip content="View AI analysis results and insights">
-                <TabsTrigger
-                  value="results"
-                  disabled={!currentResult}
-                >
-                  Results
-                </TabsTrigger>
-              </GuideTooltip>
-              <GuideTooltip content="View previously processed documents">
-                <TabsTrigger value="history">
-                  History ({processedDocuments.length})
-                </TabsTrigger>
-              </GuideTooltip>
-            </TabsList>
-
-            <TabsContent value="upload" className="space-y-4">
-              <GuideTooltip content="Click to select files or drag and drop here">
-                <div className="border-2 border-dashed rounded-lg p-8 text-center" data-guide="document-upload">
-                  <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="font-medium mb-1">Upload Document</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Drag and drop or click to upload PDF, CSV, Markdown, TXT, or DOCX files (max 10MB)
-                  </p>
-                  <div className="flex justify-center">
-                    <Label htmlFor="file-upload" className="cursor-pointer">
-                      <div className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-md text-sm">
-                        Select File
-                      </div>
-                      <Input
-                        id="file-upload"
-                        type="file"
-                        className="hidden"
-                        accept=".pdf,.csv,.md,.txt,.docx"
-                        onChange={handleFileChange}
-                      />
-                    </Label>
-                  </div>
-                </div>
-              </GuideTooltip>
-
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Error</AlertTitle>
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              {agents.length === 0 && (
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>No Active Agents</AlertTitle>
-                  <AlertDescription>
-                    Please create and activate at least one AI agent in the Agents tab to process documents.
-                  </AlertDescription>
-                </Alert>
-              )}
-            </TabsContent>
-
-            <TabsContent value="preview" className="space-y-4">
-              {renderPreview()}
-
-              <div className="space-y-4 mt-6">
-                <div className="space-y-2">
-                  <GuideTooltip content="Choose which AI agent will analyze your document">
-                    <Label htmlFor="agent-select">
-                      Select Agent for Processing
-                    </Label>
-                  </GuideTooltip>
-                  <Select
-                    value={selectedAgent || undefined}
-                    onValueChange={setSelectedAgent}
-                  >
-                    <SelectTrigger id="agent-select">
-                      <SelectValue placeholder="Select an agent" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {agents.map((agent) => (
-                        <SelectItem key={agent.id} value={agent.id}>
-                          {agent.name} ({agent.providerId})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Error</AlertTitle>
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
-
-                <div className="flex justify-between">
-                  <Button variant="outline" onClick={handleRemoveFile}>
-                    Cancel
-                  </Button>
-                  <GuideTooltip content="Start AI analysis of your document">
-                    <Button
-                      onClick={handleProcessDocument}
-                      disabled={processing || !selectedAgent || agents.length === 0}
-                      data-guide="process-document"
-                    >
-                      {processing ? "Processing..." : "Process Document"}
-                    </Button>
-                  </GuideTooltip>
-                </div>
-
-                {processing && (
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Processing document with AI...</span>
-                      <span>{progress}%</span>
-                    </div>
-                    <Progress value={progress} />
-                  </div>
-                )}
+    <div className="space-y-6 bg-white min-h-screen p-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold">Document Processing</h2>
+          <p className="text-gray-600">Upload and process documents with AI agents</p>
+        </div>
+        <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+          <DialogTrigger asChild>
+            <Button>
+              <Upload className="h-4 w-4 mr-2" />
+              Upload Document
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Upload Document</DialogTitle>
+              <DialogDescription>
+                Select an AI agent and upload a document for processing
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="agent">Select AI Agent</Label>
+                <Select value={selectedAgent} onValueChange={setSelectedAgent}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose an agent for processing" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents.filter(agent => agent.status === 'active').map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.name} - {agent.description}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </TabsContent>
-
-            <TabsContent value="results">{renderResults()}</TabsContent>
-
-            <TabsContent value="history" className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Processing History</h3>
-                <Badge variant="secondary">{processedDocuments.length} documents</Badge>
-              </div>
-              
-              {processedDocuments.length === 0 ? (
-                <div className="text-center py-8">
-                  <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No documents processed yet.</p>
+              <div>
+                <Label htmlFor="file">Document File</Label>
+                <div className="mt-2">
+                  <input
+                    type="file"
+                    id="file"
+                    accept=".pdf,.csv,.md,.txt"
+                    onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  />
                 </div>
-              ) : (
+                <p className="text-xs text-gray-500 mt-1">
+                  Supported formats: PDF, CSV, Markdown, Text (Max 10MB)
+                </p>
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button variant="outline" onClick={() => setShowUploadDialog(false)}>
+                  Cancel
+                </Button>
+                <Button disabled={!selectedAgent || uploading}>
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Upload & Process
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {agents.length === 0 && (
+        <Card>
+          <CardContent className="text-center py-8">
+            <Bot className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No AI Agents</h3>
+            <p className="text-gray-500 mb-4">You need to create AI agents before processing documents</p>
+            <Button variant="outline">
+              Go to Agents
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="flex items-center space-x-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search documents..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+      </div>
+
+      {filteredDocuments.length === 0 && agents.length > 0 ? (
+        <Card>
+          <CardContent className="text-center py-8">
+            <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Documents</h3>
+            <p className="text-gray-500 mb-4">Upload your first document to get started</p>
+            <Button onClick={() => setShowUploadDialog(true)}>
+              <Upload className="h-4 w-4 mr-2" />
+              Upload Your First Document
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredDocuments.map((document) => (
+            <Card key={document.id} className="relative">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center">
+                    <File className="h-5 w-5 mr-2" />
+                    {document.name}
+                  </CardTitle>
+                  <Badge variant={
+                    document.status === 'completed' ? 'default' :
+                    document.status === 'processing' ? 'secondary' :
+                    document.status === 'error' ? 'destructive' : 'outline'
+                  }>
+                    {document.status}
+                  </Badge>
+                </div>
+                <CardDescription>
+                  {document.type} • {formatFileSize(document.size)}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
                 <div className="space-y-3">
-                  {processedDocuments.map((doc) => (
-                    <Card key={doc.id} className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {doc.type === 'pdf' ? <FileText className="h-5 w-5 text-blue-500" /> :
-                           doc.type === 'csv' ? <FileSpreadsheet className="h-5 w-5 text-green-500" /> :
-                           <FileCode className="h-5 w-5 text-purple-500" />}
-                          <div>
-                            <h4 className="font-medium">{doc.name}</h4>
-                            <p className="text-sm text-muted-foreground">
-                              Processed by {doc.agentUsed} • {new Date(doc.processedAt).toLocaleDateString()}
-                            </p>
-                          </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Status:</span>
+                    <div className="flex items-center">
+                      {getStatusIcon(document.status)}
+                      <span className="ml-1 capitalize">{document.status}</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Uploaded:</span>
+                    <span className="font-medium">{formatTimeAgo(document.createdAt)}</span>
+                  </div>
+
+                  {document.status === 'processing' && (
+                    <div className="space-y-2">
+                      <Progress value={65} className="w-full" />
+                      <p className="text-xs text-gray-500">Processing with AI agent...</p>
+                    </div>
+                  )}
+
+                  {document.status === 'completed' && document.processingResults && (
+                    <div className="space-y-2">
+                      <div className="text-sm">
+                        <span className="text-gray-500">Insights:</span>
+                        <div className="mt-1 text-xs bg-gray-50 p-2 rounded">
+                          {document.processingResults.summary || 'Processing completed successfully'}
                         </div>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => {
-                            setCurrentResult(doc.result);
-                            setActiveTab("results");
-                          }}
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          View Results
-                        </Button>
                       </div>
-                    </Card>
-                  ))}
+                      {document.processingResults.entities && (
+                        <div className="flex flex-wrap gap-1">
+                          {document.processingResults.entities.slice(0, 3).map((entity: string, index: number) => (
+                            <Badge key={index} variant="outline" className="text-xs">
+                              {entity}
+                            </Badge>
+                          ))}
+                          {document.processingResults.entities.length > 3 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{document.processingResults.entities.length - 3} more
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {document.status === 'error' && (
+                    <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
+                      Processing failed. Please try again.
+                    </div>
+                  )}
+
+                  <div className="pt-3 border-t flex space-x-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedDocument(document)}
+                      className="flex-1"
+                    >
+                      <Eye className="h-3 w-3 mr-1" />
+                      View
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open(document.url, '_blank')}
+                    >
+                      <Download className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteDocument(document.id)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Document Viewer Dialog */}
+      <Dialog open={!!selectedDocument} onOpenChange={() => setSelectedDocument(null)}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedDocument?.name}</DialogTitle>
+            <DialogDescription>
+              Document details and processing results
+            </DialogDescription>
+          </DialogHeader>
+          {selectedDocument && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-500">Type:</span>
+                  <span className="ml-2 font-medium">{selectedDocument.type}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Size:</span>
+                  <span className="ml-2 font-medium">{formatFileSize(selectedDocument.size)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Status:</span>
+                  <span className="ml-2 font-medium capitalize">{selectedDocument.status}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Uploaded:</span>
+                  <span className="ml-2 font-medium">{formatTimeAgo(selectedDocument.createdAt)}</span>
+                </div>
+              </div>
+
+              {selectedDocument.processingResults && (
+                <div className="space-y-4">
+                  <h4 className="font-medium">Processing Results</h4>
+                  
+                  {selectedDocument.processingResults.summary && (
+                    <div>
+                      <h5 className="text-sm font-medium text-gray-700 mb-2">Summary</h5>
+                      <p className="text-sm bg-gray-50 p-3 rounded">
+                        {selectedDocument.processingResults.summary}
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedDocument.processingResults.entities && (
+                    <div>
+                      <h5 className="text-sm font-medium text-gray-700 mb-2">Entities</h5>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedDocument.processingResults.entities.map((entity: string, index: number) => (
+                          <Badge key={index} variant="outline">
+                            {entity}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedDocument.processingResults.insights && (
+                    <div>
+                      <h5 className="text-sm font-medium text-gray-700 mb-2">Insights</h5>
+                      <ul className="text-sm space-y-1">
+                        {selectedDocument.processingResults.insights.map((insight: string, index: number) => (
+                          <li key={index} className="flex items-start">
+                            <span className="text-blue-500 mr-2">•</span>
+                            {insight}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-        <CardFooter className="flex justify-between border-t pt-4">
-          <p className="text-xs text-muted-foreground">
-            Supported formats: PDF, CSV, Markdown, TXT, DOCX (max 10MB)
-          </p>
-          {currentResult && (
-            <p className="text-xs text-muted-foreground">
-              Last processed: {new Date(currentResult.metadata?.processingTime || Date.now()).toLocaleString()}
-            </p>
+
+              {selectedDocument.extractedData && (
+                <div>
+                  <h4 className="font-medium mb-2">Extracted Content</h4>
+                  <div className="bg-gray-50 p-3 rounded text-sm max-h-60 overflow-auto">
+                    <pre className="whitespace-pre-wrap">
+                      {selectedDocument.extractedData.text?.substring(0, 1000)}
+                      {selectedDocument.extractedData.text?.length > 1000 && '...'}
+                    </pre>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
-        </CardFooter>
-      </Card>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -27,6 +27,10 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { UserGuide } from '@/components/ui/user-guide';
 import { useAuth } from '@/contexts/AuthContext';
+import { AgentConfiguration } from '@/components/agents/AgentConfiguration';
+import { WorkflowBuilder } from '@/components/workflow/WorkflowBuilder';
+import { DocumentProcessor } from '@/components/documents/DocumentProcessor';
+import { VendorSelection } from '@/components/vendors/VendorSelection';
 import Cookies from 'js-cookie';
 
 interface DashboardProps {
@@ -62,6 +66,15 @@ interface DashboardData {
   }>;
 }
 
+interface AIProvider {
+  id: string;
+  name: string;
+  type: string;
+  isActive: boolean;
+  model?: string;
+  createdAt: string;
+}
+
 const GuideTooltip = ({ children, content }: { children: React.ReactNode; content: string }) => (
   <div title={content}>
     {children}
@@ -75,13 +88,17 @@ const Dashboard = ({
   const [activeTab, setActiveTab] = useState("overview");
   const [showGuide, setShowGuide] = useState(false);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [aiProviders, setAiProviders] = useState<AIProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user, logout } = useAuth();
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+    if (activeTab === 'providers') {
+      fetchAIProviders();
+    }
+  }, [activeTab]);
 
   const fetchDashboardData = async () => {
     try {
@@ -111,6 +128,25 @@ const Dashboard = ({
       setError('Failed to load dashboard data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAIProviders = async () => {
+    try {
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/ai-providers', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAiProviders(data.providers || []);
+      }
+    } catch (error) {
+      console.error('Error fetching AI providers:', error);
     }
   };
 
@@ -233,9 +269,24 @@ const Dashboard = ({
                 Documents
               </Button>
             </GuideTooltip>
+            <GuideTooltip content="Smart vendor selection and procurement">
+              <Button
+                variant={activeTab === "vendors" ? "secondary" : "ghost"}
+                className="w-full justify-start"
+                onClick={() => setActiveTab("vendors")}
+              >
+                <BarChart3 className="mr-2 h-4 w-4" />
+                Vendor Selection
+              </Button>
+            </GuideTooltip>
             <Separator className="my-2" />
             <GuideTooltip content="View performance metrics and execution analytics">
-              <Button variant="ghost" className="w-full justify-start" data-guide="performance-metrics">
+              <Button 
+                variant={activeTab === "analytics" ? "secondary" : "ghost"} 
+                className="w-full justify-start" 
+                onClick={() => setActiveTab("analytics")}
+                data-guide="performance-metrics"
+              >
                 <BarChart3 className="mr-2 h-4 w-4" />
                 Analytics
               </Button>
@@ -313,7 +364,7 @@ const Dashboard = ({
                     <div className="text-2xl font-bold">{dashboardData?.stats.activeAgents || 0}</div>
                     <p className="text-xs text-muted-foreground">
                       <TrendingUp className="inline h-3 w-3 mr-1" />
-                      +2 from last week
+                      Real-time count
                     </p>
                   </CardContent>
                 </Card>
@@ -327,7 +378,7 @@ const Dashboard = ({
                     <div className="text-2xl font-bold">{dashboardData?.stats.workflows || 0}</div>
                     <p className="text-xs text-muted-foreground">
                       <TrendingUp className="inline h-3 w-3 mr-1" />
-                      +1 from last week
+                      Total created
                     </p>
                   </CardContent>
                 </Card>
@@ -341,7 +392,7 @@ const Dashboard = ({
                     <div className="text-2xl font-bold">{dashboardData?.stats.documents || 0}</div>
                     <p className="text-xs text-muted-foreground">
                       <TrendingUp className="inline h-3 w-3 mr-1" />
-                      +12 from last week
+                      Processed
                     </p>
                   </CardContent>
                 </Card>
@@ -423,53 +474,28 @@ const Dashboard = ({
               </div>
             </TabsContent>
 
-            {/* Other tabs would be implemented similarly with real data */}
             <TabsContent value="providers">
-              <Card>
-                <CardHeader>
-                  <CardTitle>AI Providers</CardTitle>
-                  <CardDescription>Manage your AI provider connections</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-500">Provider management interface would be implemented here</p>
-                </CardContent>
-              </Card>
+              <AIProvidersSection providers={aiProviders} onRefresh={fetchAIProviders} />
             </TabsContent>
 
             <TabsContent value="agents">
-              <Card>
-                <CardHeader>
-                  <CardTitle>AI Agents</CardTitle>
-                  <CardDescription>Configure and manage your AI agents</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-500">Agent management interface would be implemented here</p>
-                </CardContent>
-              </Card>
+              <AgentConfiguration />
             </TabsContent>
 
             <TabsContent value="workflows">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Workflows</CardTitle>
-                  <CardDescription>Build and manage AI workflows</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-500">Workflow builder interface would be implemented here</p>
-                </CardContent>
-              </Card>
+              <WorkflowBuilder />
             </TabsContent>
 
             <TabsContent value="documents">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Documents</CardTitle>
-                  <CardDescription>Process documents with AI agents</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-500">Document processing interface would be implemented here</p>
-                </CardContent>
-              </Card>
+              <DocumentProcessor />
+            </TabsContent>
+
+            <TabsContent value="vendors">
+              <VendorSelection />
+            </TabsContent>
+
+            <TabsContent value="analytics">
+              <AnalyticsSection />
             </TabsContent>
           </Tabs>
         </main>
@@ -477,6 +503,219 @@ const Dashboard = ({
 
       {/* User Guide */}
       <UserGuide isOpen={showGuide} onClose={() => setShowGuide(false)} />
+    </div>
+  );
+};
+
+// AI Providers Section Component
+const AIProvidersSection = ({ providers, onRefresh }: { providers: AIProvider[], onRefresh: () => void }) => {
+  const [loading, setLoading] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  const addProvider = async (providerData: any) => {
+    try {
+      setLoading(true);
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/ai-providers', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(providerData),
+      });
+
+      if (response.ok) {
+        onRefresh();
+        setShowAddForm(false);
+      }
+    } catch (error) {
+      console.error('Error adding provider:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h3 className="text-lg font-medium">AI Providers</h3>
+          <p className="text-sm text-gray-500">Manage your AI provider connections</p>
+        </div>
+        <Button onClick={() => setShowAddForm(true)}>
+          Add Provider
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {providers.map((provider) => (
+          <Card key={provider.id}>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                {provider.name}
+                <Badge variant={provider.isActive ? 'default' : 'secondary'}>
+                  {provider.isActive ? 'Active' : 'Inactive'}
+                </Badge>
+              </CardTitle>
+              <CardDescription>{provider.type}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-600">Model: {provider.model || 'Default'}</p>
+              <p className="text-xs text-gray-500 mt-2">
+                Added: {formatTimeAgo(provider.createdAt)}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {providers.length === 0 && (
+        <Card>
+          <CardContent className="text-center py-8">
+            <Settings className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No AI Providers</h3>
+            <p className="text-gray-500 mb-4">Connect your first AI provider to get started</p>
+            <Button onClick={() => setShowAddForm(true)}>
+              Add Your First Provider
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};
+
+// Analytics Section Component
+const AnalyticsSection = () => {
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, []);
+
+  const fetchAnalytics = async () => {
+    try {
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/analytics', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAnalyticsData(data);
+      }
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-medium">Analytics & Performance</h3>
+        <p className="text-sm text-gray-500">Monitor system performance and usage metrics</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Agent Performance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm">Success Rate</span>
+                <span className="text-sm font-medium">
+                  {analyticsData?.agentSuccessRate || 0}%
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm">Avg Response Time</span>
+                <span className="text-sm font-medium">
+                  {analyticsData?.avgResponseTime || 0}ms
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm">Total Executions</span>
+                <span className="text-sm font-medium">
+                  {analyticsData?.totalExecutions || 0}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Workflow Metrics</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm">Active Workflows</span>
+                <span className="text-sm font-medium">
+                  {analyticsData?.activeWorkflows || 0}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm">Completed Today</span>
+                <span className="text-sm font-medium">
+                  {analyticsData?.workflowsToday || 0}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm">Avg Duration</span>
+                <span className="text-sm font-medium">
+                  {analyticsData?.avgWorkflowDuration || 0}s
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Document Processing</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm">Processed Today</span>
+                <span className="text-sm font-medium">
+                  {analyticsData?.documentsToday || 0}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm">Processing Rate</span>
+                <span className="text-sm font-medium">
+                  {analyticsData?.processingRate || 0}/min
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm">Storage Used</span>
+                <span className="text-sm font-medium">
+                  {analyticsData?.storageUsed || 0}MB
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

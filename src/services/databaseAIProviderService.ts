@@ -1,7 +1,8 @@
 import { db } from '@/db';
-import { aiProviders, aiModels, agents, agentExecutions, auditLogs } from '@/db/schema';
+import { aiProviders, aiModels, agents, agentExecutions, activities } from '@/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { AIProvider, ChatRequest, ChatResponse } from '@/types/providers';
+import { nanoid } from 'nanoid';
 
 export class DatabaseAIProviderService {
   // Create AI Provider
@@ -14,14 +15,18 @@ export class DatabaseAIProviderService {
     try {
       // Test connection first
       const testProvider = await this.testProviderConnection(providerData);
-      
+
       // Insert provider into database
       const [provider] = await db.insert(aiProviders).values({
+        id: nanoid(),
         name: providerData.name,
         type: providerData.type,
         apiKey: providerData.apiKey,
-        baseUrl: providerData.baseUrl,
-        status: 'connected',
+        endpoint: providerData.baseUrl,
+        isActive: true,
+        userId: 'system', // This should come from auth context
+        createdAt: new Date(),
+        updatedAt: new Date(),
       }).returning();
 
       // Fetch and store models
@@ -29,18 +34,22 @@ export class DatabaseAIProviderService {
       if (models.length > 0) {
         await db.insert(aiModels).values(
           models.map(model => ({
-            providerId: provider.id,
+            id: nanoid(),
+            provider: provider.id,
             modelId: model.id,
             name: model.name,
             type: model.type,
             contextLength: model.contextLength,
             capabilities: model.capabilities,
+            userId: provider.userId,
+            createdAt: new Date(),
+            updatedAt: new Date()
           }))
         );
       }
 
       // Log the action
-      await this.logAction('provider', provider.id, 'create', { providerType: provider.type });
+      await this.logAction('provider', provider.id, 'create', { providerType: provider.type, userId: provider.userId });
 
       return this.convertToAIProvider(provider, models);
     } catch (error) {
@@ -53,12 +62,12 @@ export class DatabaseAIProviderService {
     const providersWithModels = await db
       .select()
       .from(aiProviders)
-      .leftJoin(aiModels, eq(aiProviders.id, aiModels.providerId))
+      .leftJoin(aiModels, eq(aiProviders.id, aiModels.provider))
       .orderBy(desc(aiProviders.createdAt));
 
     // Group models by provider
     const providerMap = new Map<string, { provider: any; models: any[] }>();
-    
+
     for (const row of providersWithModels) {
       const providerId = row.ai_providers.id;
       if (!providerMap.has(providerId)) {
@@ -79,7 +88,7 @@ export class DatabaseAIProviderService {
     const result = await db
       .select()
       .from(aiProviders)
-      .leftJoin(aiModels, eq(aiProviders.id, aiModels.providerId))
+      .leftJoin(aiModels, eq(aiProviders.id, aiModels.provider))
       .where(eq(aiProviders.id, id));
 
     if (result.length === 0) return null;
@@ -110,8 +119,8 @@ export class DatabaseAIProviderService {
   // Delete provider
   async deleteProvider(id: string): Promise<boolean> {
     const result = await db.delete(aiProviders).where(eq(aiProviders.id, id));
-    
-    if (result.rowCount && result.rowCount > 0) {
+
+    if (result.length > 0) {
       await this.logAction('provider', id, 'delete', {});
       return true;
     }
@@ -122,20 +131,18 @@ export class DatabaseAIProviderService {
   async createAgent(agentData: {
     name: string;
     description?: string;
-    providerId: string;
-    modelId: string;
-    systemPrompt: string;
+    provider: string;
+    model: string;
+    prompt: string;
     temperature?: number;
     maxTokens?: number;
+    userId: string;
   }) {
     const [agent] = await db.insert(agents).values({
-      name: agentData.name,
-      description: agentData.description,
-      providerId: agentData.providerId,
-      modelId: agentData.modelId,
-      systemPrompt: agentData.systemPrompt,
-      temperature: agentData.temperature?.toString() || '0.7',
-      maxTokens: agentData.maxTokens || 1000,
+      id: nanoid(),
+      ...agentData,
+      createdAt: new Date(),
+      updatedAt: new Date()
     }).returning();
 
     await this.logAction('agent', agent.id, 'create', { name: agent.name });
@@ -147,16 +154,29 @@ export class DatabaseAIProviderService {
     return await db
       .select()
       .from(agents)
-      .leftJoin(aiProviders, eq(agents.providerId, aiProviders.id))
-      .leftJoin(aiModels, eq(agents.modelId, aiModels.id))
+      .leftJoin(aiProviders, eq(agents.provider, aiProviders.id))
+      .leftJoin(aiModels, eq(agents.model, aiModels.id))
       .orderBy(desc(agents.createdAt));
   }
 
   // Send chat request
-  async sendChatRequest(providerId: string, request: ChatRequest): Promise<ChatResponse> {
-    const provider = await this.getProvider(providerId);
+  async sendChatRequest(agentId: string, request: ChatRequest): Promise<ChatResponse> {
+    // Get agent details to find the provider
+    const agentResult = await db.select()
+      .from(agents)
+      .leftJoin(aiProviders, eq(agents.provider, aiProviders.id))
+      .where(eq(agents.id, agentId))
+      .limit(1);
+
+    if (agentResult.length === 0) {
+      throw new Error('Agent not found');
+    }
+
+    const agent = agentResult[0].agents;
+    const provider = agentResult[0].ai_providers;
+
     if (!provider) {
-      throw new Error('Provider not found');
+      throw new Error('Provider not found for agent');
     }
 
     const startTime = Date.now();
@@ -164,11 +184,13 @@ export class DatabaseAIProviderService {
     let error: string | null = null;
 
     try {
-      response = await this.makeAPICall(provider, request);
-      
+      response = await this.makeAPICall(provider as AIProvider, request);
+
       // Log successful execution
       await db.insert(agentExecutions).values({
-        agentId: providerId, // This should be agent ID in real implementation
+        id: nanoid(),
+        agentId: agentId,
+        userId: agent.userId || 'system',
         input: request,
         output: response,
         status: 'completed',
@@ -181,10 +203,12 @@ export class DatabaseAIProviderService {
       return response;
     } catch (err) {
       error = err instanceof Error ? err.message : 'Unknown error';
-      
+
       // Log failed execution
       await db.insert(agentExecutions).values({
-        agentId: providerId,
+        id: nanoid(),
+        agentId: agentId,
+        userId: agent.userId || 'system',
         input: request,
         status: 'failed',
         error,
@@ -576,12 +600,14 @@ export class DatabaseAIProviderService {
   }
 
   private async logAction(entityType: string, entityId: string, action: string, details: any) {
-    await db.insert(auditLogs).values({
-      entityType,
-      entityId,
-      action,
-      details,
-      timestamp: new Date(),
+    await db.insert(activities).values({
+      id: nanoid(),
+      userId: 'system',
+      type: entityType,
+      message: action,
+      status: 'success',
+      metadata: details,
+      createdAt: new Date(),
     });
   }
 }

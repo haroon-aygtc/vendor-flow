@@ -1,549 +1,500 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Plus,
-  Settings,
-  Play,
-  Pause,
-  Trash2,
-  Bot,
-  Brain,
-  MessageSquare,
+import React, { useState, useEffect } from 'react';
+import { 
+  Plus, 
+  Settings, 
+  Play, 
+  Pause, 
+  Trash2, 
+  Edit, 
+  Bot, 
+  Loader2,
   CheckCircle,
-  Clock,
   AlertCircle,
-} from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AIProvider, ChatRequest } from "@/types/providers";
-import { clientAIProviderService } from '@/services/clientAIProviderService';
-import { GuideTooltip } from "@/components/ui/user-guide";
+  Clock,
+  BarChart3
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useToast } from '@/components/ui/use-toast';
+import Cookies from 'js-cookie';
 
 interface Agent {
   id: string;
   name: string;
   description: string;
-  providerId: string;
-  modelId: string;
-  systemPrompt: string;
-  temperature: number;
-  maxTokens: number;
-  status: "active" | "inactive" | "running";
-  createdAt: Date;
-  lastRun?: Date;
+  prompt: string;
+  provider: string;
+  model: string;
+  status: 'active' | 'inactive' | 'error';
   totalRuns: number;
+  successfulRuns: number;
+  lastRun?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-interface AgentConfigurationProps {
-  onAgentCreated?: (agent: Agent) => void;
+interface AIProvider {
+  id: string;
+  name: string;
+  type: string;
+  isActive: boolean;
+  model?: string;
 }
 
-const AgentConfiguration = ({ onAgentCreated = () => {} }: AgentConfigurationProps) => {
-  const [activeTab, setActiveTab] = useState("agents");
+const AgentConfiguration = () => {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [providers, setProviders] = useState<AIProvider[]>([]);
-  const [isCreatingAgent, setIsCreatingAgent] = useState(false);
-  
-  // Agent creation form state
-  const [agentName, setAgentName] = useState("");
-  const [agentDescription, setAgentDescription] = useState("");
-  const [selectedProvider, setSelectedProvider] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
-  const [systemPrompt, setSystemPrompt] = useState("You are a helpful AI assistant. Respond clearly and concisely to user queries.");
-  const [temperature, setTemperature] = useState(0.7);
-  const [maxTokens, setMaxTokens] = useState(1000);
-  
-  // Testing state
-  const [testingAgentId, setTestingAgentId] = useState("");
-  const [testMessage, setTestMessage] = useState("Hello! Can you introduce yourself?");
-  const [testResponse, setTestResponse] = useState("");
-  const [isTesting, setIsTesting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [testing, setTesting] = useState<string | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [testMessage, setTestMessage] = useState('');
+  const [testResult, setTestResult] = useState<any>(null);
+  const { toast } = useToast();
+
+  const [newAgent, setNewAgent] = useState({
+    name: '',
+    description: '',
+    prompt: '',
+    provider: '',
+    model: ''
+  });
 
   useEffect(() => {
-    loadProviders();
-    loadAgents();
+    fetchAgents();
+    fetchProviders();
   }, []);
 
-  const loadProviders = async () => {
+  const fetchAgents = async () => {
     try {
-      const providers = clientAIProviderService.getProviders();
-      setProviders(providers.filter(p => p.status === 'connected'));
-    } catch (error) {
-      console.error('Failed to load providers:', error);
-      setProviders([]);
-    }
-  };
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/agents', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-  const loadAgents = async () => {
-    try {
-      // Load agents from localStorage for now
-      const savedAgents = localStorage.getItem('ai-agents');
-      if (savedAgents) {
-        const agentsData = JSON.parse(savedAgents);
-        setAgents(agentsData);
+      if (response.ok) {
+        const data = await response.json();
+        setAgents(data.agents || []);
       }
     } catch (error) {
-      console.error('Failed to load agents:', error);
-      setAgents([]);
+      console.error('Error fetching agents:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch agents",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const saveAgents = (updatedAgents: Agent[]) => {
-    localStorage.setItem('ai-agents', JSON.stringify(updatedAgents));
-    setAgents(updatedAgents);
+  const fetchProviders = async () => {
+    try {
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/ai-providers', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setProviders(data.providers || []);
+      }
+    } catch (error) {
+      console.error('Error fetching providers:', error);
+    }
   };
 
-  const handleCreateAgent = async () => {
-    if (!agentName || !selectedProvider || !selectedModel) {
+  const createAgent = async () => {
+    if (!newAgent.name || !newAgent.prompt || !newAgent.provider) {
+      toast({
+        title: "Validation Error",
+        description: "Name, prompt, and provider are required",
+        variant: "destructive",
+      });
       return;
     }
 
     try {
-      const newAgent: Agent = {
-        id: 'agent-' + Date.now(),
-        name: agentName,
-        description: agentDescription,
-        providerId: selectedProvider,
-        modelId: selectedModel,
-        systemPrompt,
-        temperature,
-        maxTokens,
-        status: "active",
-        createdAt: new Date(),
-        totalRuns: 0
-      };
+      setCreating(true);
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/agents', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newAgent),
+      });
 
-      const updatedAgents = [...agents, newAgent];
-      localStorage.setItem('ai-agents', JSON.stringify(updatedAgents));
-      setAgents(updatedAgents);
-      onAgentCreated(newAgent);
-      
-      // Reset form
-      setAgentName("");
-      setAgentDescription("");
-      setSelectedProvider("");
-      setSelectedModel("");
-      setSystemPrompt("You are a helpful AI assistant. Respond clearly and concisely to user queries.");
-      setTemperature(0.7);
-      setMaxTokens(1000);
-      setIsCreatingAgent(false);
+      if (response.ok) {
+        const data = await response.json();
+        setAgents([data.agent, ...agents]);
+        setNewAgent({ name: '', description: '', prompt: '', provider: '', model: '' });
+        setShowCreateDialog(false);
+        toast({
+          title: "Success",
+          description: "Agent created successfully",
+        });
+      } else {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
     } catch (error) {
-      console.error('Failed to create agent:', error);
+      console.error('Error creating agent:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create agent",
+        variant: "destructive",
+      });
+    } finally {
+      setCreating(false);
     }
   };
 
-  const handleTestAgent = async (agentId: string) => {
-    const agent = agents.find(a => a.id === agentId);
-    if (!agent || !testMessage) return;
-
-    setIsTesting(true);
-    setTestResponse("");
+  const testAgent = async (agentId: string) => {
+    if (!testMessage.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a test message",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
-      const request: ChatRequest = {
-        model: agent.modelId,
-        messages: [
-          { role: "system", content: agent.systemPrompt },
-          { role: "user", content: testMessage }
-        ],
-        temperature: agent.temperature,
-        maxTokens: agent.maxTokens
-      };
+      setTesting(agentId);
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/agents/test', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          agentId,
+          message: testMessage,
+        }),
+      });
 
-      const response = await clientAIProviderService.sendChatRequest(agent.providerId, request);
-      setTestResponse(response.choices[0].message.content);
-      
-      // Update agent stats
-      const updatedAgents = agents.map(a => 
-        a.id === agentId 
-          ? { ...a, totalRuns: a.totalRuns + 1, lastRun: new Date() }
-          : a
-      );
-      localStorage.setItem('ai-agents', JSON.stringify(updatedAgents));
-      setAgents(updatedAgents);
+      if (response.ok) {
+        const data = await response.json();
+        setTestResult(data);
+        
+        // Update agent stats in the list
+        setAgents(agents.map(agent => 
+          agent.id === agentId ? data.agent : agent
+        ));
+
+        toast({
+          title: data.success ? "Test Successful" : "Test Failed",
+          description: data.success ? "Agent responded successfully" : data.error,
+          variant: data.success ? "default" : "destructive",
+        });
+      } else {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
     } catch (error) {
-      setTestResponse(`Error: ${error instanceof Error ? error.message : "Failed to send message"}`);
+      console.error('Error testing agent:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to test agent",
+        variant: "destructive",
+      });
     } finally {
-      setIsTesting(false);
+      setTesting(null);
     }
   };
 
-  const handleDeleteAgent = (agentId: string) => {
-    const updatedAgents = agents.filter(a => a.id !== agentId);
-    saveAgents(updatedAgents);
+  const deleteAgent = async (agentId: string) => {
+    try {
+      const token = Cookies.get('auth_token');
+      const response = await fetch(`/api/agents?id=${agentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        setAgents(agents.filter(agent => agent.id !== agentId));
+        toast({
+          title: "Success",
+          description: "Agent deleted successfully",
+        });
+      } else {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      console.error('Error deleting agent:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete agent",
+        variant: "destructive",
+      });
+    }
   };
 
-  const toggleAgentStatus = (agentId: string) => {
-    const updatedAgents = agents.map(agent => 
-      agent.id === agentId 
-        ? { ...agent, status: agent.status === "active" ? "inactive" : "active" as const }
-        : agent
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} hours ago`;
+    return `${Math.floor(diffInMinutes / 1440)} days ago`;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
     );
-    saveAgents(updatedAgents);
-  };
-
-  const getProviderName = (providerId: string) => {
-    const provider = providers.find(p => p.id === providerId);
-    return provider?.name || "Unknown Provider";
-  };
-
-  const getModelName = (providerId: string, modelId: string) => {
-    const provider = providers.find(p => p.id === providerId);
-    const model = provider?.models.find(m => m.id === modelId);
-    return model?.name || modelId;
-  };
-
-  const selectedProviderData = providers.find(p => p.id === selectedProvider);
+  }
 
   return (
-    <div className="w-full h-full bg-background">
-      <Card className="w-full">
-        <CardHeader>
-          <CardTitle>Agent Configuration</CardTitle>
-          <CardDescription>
-            Create and manage AI agents with real provider integrations. Configure system prompts, 
-            parameters, and test agent responses.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="agents">My Agents</TabsTrigger>
-              <GuideTooltip content="Create new AI agents with custom configurations">
-                <TabsTrigger value="create" data-guide="create-agent">Create Agent</TabsTrigger>
-              </GuideTooltip>
-              <GuideTooltip content="Test your agents with sample messages">
-                <TabsTrigger value="testing" data-guide="test-agent">Test Agents</TabsTrigger>
-              </GuideTooltip>
-            </TabsList>
-
-            <TabsContent value="agents" className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h3 className="text-lg font-medium">Configured Agents</h3>
-                <GuideTooltip content="Create your first AI agent">
-                  <Button onClick={() => setIsCreatingAgent(true)} data-guide="create-agent">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Agent
-                  </Button>
-                </GuideTooltip>
-              </div>
-
-              {agents.length === 0 ? (
-                <Card>
-                  <CardContent className="p-6 text-center">
-                    <Bot className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-medium mb-2">No Agents Created</h3>
-                    <p className="text-muted-foreground mb-4">
-                      Create your first AI agent to start building intelligent workflows.
-                    </p>
-                    <Button onClick={() => setActiveTab("create")}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Create Agent
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid gap-4">
-                  {agents.map((agent) => (
-                    <Card key={agent.id} className="bg-background">
-                      <CardContent className="p-6">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-4">
-                            <div className="bg-primary/10 p-3 rounded-full">
-                              <Bot className="h-6 w-6" />
-                            </div>
-                            <div>
-                              <h4 className="font-semibold text-lg">{agent.name}</h4>
-                              <p className="text-sm text-muted-foreground">{agent.description}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Badge 
-                              variant={agent.status === "active" ? "default" : "secondary"}
-                              className="capitalize"
-                            >
-                              {agent.status === "active" ? (
-                                <CheckCircle className="mr-1 h-3 w-3" />
-                              ) : (
-                                <Clock className="mr-1 h-3 w-3" />
-                              )}
-                              {agent.status}
-                            </Badge>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => toggleAgentStatus(agent.id)}
-                            >
-                              {agent.status === "active" ? (
-                                <Pause className="h-4 w-4" />
-                              ) : (
-                                <Play className="h-4 w-4" />
-                              )}
-                            </Button>
-                            <Button variant="outline" size="sm">
-                              <Settings className="h-4 w-4" />
-                            </Button>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => handleDeleteAgent(agent.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">Provider:</span>
-                            <p className="font-medium">{getProviderName(agent.providerId)}</p>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Model:</span>
-                            <p className="font-medium">{getModelName(agent.providerId, agent.modelId)}</p>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Total Runs:</span>
-                            <p className="font-medium">{agent.totalRuns}</p>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Last Run:</span>
-                            <p className="font-medium">
-                              {agent.lastRun ? new Date(agent.lastRun).toLocaleDateString() : "Never"}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+    <div className="space-y-6 bg-white min-h-screen p-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold">AI Agents</h2>
+          <p className="text-gray-600">Create and manage your AI agents</p>
+        </div>
+        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Agent
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Create New Agent</DialogTitle>
+              <DialogDescription>
+                Configure your AI agent with custom behavior and capabilities
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="name">Agent Name</Label>
+                  <Input
+                    id="name"
+                    value={newAgent.name}
+                    onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })}
+                    placeholder="e.g., Document Analyzer"
+                  />
                 </div>
-              )}
-            </TabsContent>
+                <div>
+                  <Label htmlFor="provider">AI Provider</Label>
+                  <Select value={newAgent.provider} onValueChange={(value) => setNewAgent({ ...newAgent, provider: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {providers.filter(p => p.isActive).map((provider) => (
+                        <SelectItem key={provider.id} value={provider.id}>
+                          {provider.name} ({provider.type})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <Input
+                  id="description"
+                  value={newAgent.description}
+                  onChange={(e) => setNewAgent({ ...newAgent, description: e.target.value })}
+                  placeholder="Brief description of what this agent does"
+                />
+              </div>
+              <div>
+                <Label htmlFor="model">Model (Optional)</Label>
+                <Input
+                  id="model"
+                  value={newAgent.model}
+                  onChange={(e) => setNewAgent({ ...newAgent, model: e.target.value })}
+                  placeholder="e.g., gpt-4, claude-3-sonnet-20240229"
+                />
+              </div>
+              <div>
+                <Label htmlFor="prompt">System Prompt</Label>
+                <Textarea
+                  id="prompt"
+                  value={newAgent.prompt}
+                  onChange={(e) => setNewAgent({ ...newAgent, prompt: e.target.value })}
+                  placeholder="Define the agent's behavior, role, and instructions..."
+                  rows={6}
+                />
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={createAgent} disabled={creating}>
+                  {creating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Create Agent
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
 
-            <TabsContent value="create" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Create New Agent</CardTitle>
-                  <CardDescription>
-                    Configure a new AI agent with specific provider, model, and behavior settings.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {providers.length === 0 && (
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        No AI providers connected. Please add and connect providers first in the AI Providers tab.
-                      </AlertDescription>
-                    </Alert>
-                  )}
+      {providers.length === 0 && (
+        <Card>
+          <CardContent className="text-center py-8">
+            <Settings className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No AI Providers</h3>
+            <p className="text-gray-500 mb-4">You need to add AI providers before creating agents</p>
+            <Button variant="outline">
+              Go to AI Providers
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {agents.length === 0 && providers.length > 0 ? (
+        <Card>
+          <CardContent className="text-center py-8">
+            <Bot className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Agents Created</h3>
+            <p className="text-gray-500 mb-4">Create your first AI agent to get started</p>
+            <Button onClick={() => setShowCreateDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Your First Agent
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {agents.map((agent) => (
+            <Card key={agent.id} className="relative">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">{agent.name}</CardTitle>
+                  <Badge variant={agent.status === 'active' ? 'default' : agent.status === 'error' ? 'destructive' : 'secondary'}>
+                    {agent.status}
+                  </Badge>
+                </div>
+                <CardDescription>{agent.description || 'No description'}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Provider:</span>
+                    <span className="font-medium">
+                      {providers.find(p => p.id === agent.provider)?.name || agent.provider}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Model:</span>
+                    <span className="font-medium">{agent.model || 'Default'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Total Runs:</span>
+                    <span className="font-medium">{agent.totalRuns}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Success Rate:</span>
+                    <span className="font-medium">
+                      {agent.totalRuns > 0 ? Math.round((agent.successfulRuns / agent.totalRuns) * 100) : 0}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Last Run:</span>
+                    <span className="font-medium">
+                      {agent.lastRun ? formatTimeAgo(agent.lastRun) : 'Never'}
+                    </span>
+                  </div>
+
+                  <div className="pt-3 border-t">
                     <div className="space-y-2">
-                      <Label htmlFor="agent-name">Agent Name</Label>
                       <Input
-                        id="agent-name"
-                        value={agentName}
-                        onChange={(e) => setAgentName(e.target.value)}
-                        placeholder="e.g., Document Analyzer"
+                        placeholder="Enter test message..."
+                        value={testMessage}
+                        onChange={(e) => setTestMessage(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && testAgent(agent.id)}
                       />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="agent-description">Description</Label>
-                      <Input
-                        id="agent-description"
-                        value={agentDescription}
-                        onChange={(e) => setAgentDescription(e.target.value)}
-                        placeholder="Brief description of agent purpose"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>AI Provider</Label>
-                      <Select value={selectedProvider} onValueChange={setSelectedProvider}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select provider" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {providers.map(provider => (
-                            <SelectItem key={provider.id} value={provider.id}>
-                              {provider.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Model</Label>
-                      <Select value={selectedModel} onValueChange={setSelectedModel}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {selectedProviderData?.models.map(model => (
-                            <SelectItem key={model.id} value={model.id}>
-                              {model.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <GuideTooltip content="Define how your agent behaves and responds to users">
-                      <Label htmlFor="system-prompt">System Prompt</Label>
-                    </GuideTooltip>
-                    <Textarea
-                      id="system-prompt"
-                      value={systemPrompt}
-                      onChange={(e) => setSystemPrompt(e.target.value)}
-                      placeholder="Define the agent's role and behavior..."
-                      rows={4}
-                      data-guide="system-prompt"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <GuideTooltip content="Controls randomness: 0 = focused, 2 = creative">
-                        <Label htmlFor="temperature">Temperature: {temperature}</Label>
-                      </GuideTooltip>
-                      <input
-                        id="temperature"
-                        type="range"
-                        min="0"
-                        max="2"
-                        step="0.1"
-                        value={temperature}
-                        onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Controls randomness (0 = focused, 2 = creative)
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <GuideTooltip content="Maximum number of tokens in the response">
-                        <Label htmlFor="max-tokens">Max Tokens</Label>
-                      </GuideTooltip>
-                      <Input
-                        id="max-tokens"
-                        type="number"
-                        value={maxTokens}
-                        onChange={(e) => setMaxTokens(parseInt(e.target.value))}
-                        min="1"
-                        max="4000"
-                      />
-                    </div>
-                  </div>
-
-                  <Button 
-                    onClick={handleCreateAgent} 
-                    disabled={!agentName || !selectedProvider || !selectedModel}
-                    className="w-full"
-                  >
-                    Create Agent
-                  </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="testing" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Test Agent Responses</CardTitle>
-                  <CardDescription>
-                    Send test messages to your agents to verify their behavior and responses.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Select Agent</Label>
-                    <Select value={testingAgentId} onValueChange={setTestingAgentId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose an agent to test" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {agents.map(agent => (
-                          <SelectItem key={agent.id} value={agent.id}>
-                            {agent.name} ({getProviderName(agent.providerId)})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Test Message</Label>
-                    <Textarea
-                      value={testMessage}
-                      onChange={(e) => setTestMessage(e.target.value)}
-                      placeholder="Enter a message to test the agent..."
-                      rows={3}
-                    />
-                  </div>
-
-                  <Button 
-                    onClick={() => handleTestAgent(testingAgentId)} 
-                    disabled={!testingAgentId || !testMessage || isTesting}
-                    className="w-full"
-                  >
-                    {isTesting ? "Testing..." : "Send Test Message"}
-                  </Button>
-
-                  {testResponse && (
-                    <div className="space-y-2">
-                      <Label>Agent Response</Label>
-                      <div className="p-4 bg-muted rounded-md">
-                        <pre className="whitespace-pre-wrap text-sm">{testResponse}</pre>
+                      <div className="flex space-x-2">
+                        <Button
+                          size="sm"
+                          onClick={() => testAgent(agent.id)}
+                          disabled={testing === agent.id}
+                          className="flex-1"
+                        >
+                          {testing === agent.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          ) : (
+                            <Play className="h-3 w-3 mr-1" />
+                          )}
+                          Test
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setEditingAgent(agent)}
+                        >
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => deleteAgent(agent.id)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
                       </div>
                     </div>
+                  </div>
+
+                  {testResult && testResult.agent?.id === agent.id && (
+                    <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center mb-2">
+                        {testResult.success ? (
+                          <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                        ) : (
+                          <AlertCircle className="h-4 w-4 text-red-500 mr-2" />
+                        )}
+                        <span className="text-sm font-medium">
+                          {testResult.success ? 'Success' : 'Failed'}
+                        </span>
+                        <span className="text-xs text-gray-500 ml-auto">
+                          {testResult.processingTime}ms
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 bg-white p-2 rounded border">
+                        {testResult.response}
+                      </p>
+                    </div>
                   )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['postgres']
+    serverComponentsExternalPackages: ['postgres', 'drizzle-orm']
   },
   webpack: (config, { isServer }) => {
     if (!isServer) {
@@ -10,7 +10,17 @@ const nextConfig = {
         net: false,
         tls: false,
         fs: false,
-        'pg-native': false,
+        perf_hooks: false,
+        crypto: false,
+        stream: false,
+        util: false,
+        url: false,
+        zlib: false,
+        http: false,
+        https: false,
+        assert: false,
+        os: false,
+        path: false,
       };
     }
     return config;

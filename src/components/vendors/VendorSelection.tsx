@@ -1,539 +1,771 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
-  Plus,
-  Settings,
-  Trash2,
+import React, { useState, useEffect } from 'react';
+import { 
+  Search, 
+  Filter, 
+  Star, 
+  TrendingUp, 
+  TrendingDown, 
+  Minus, 
+  Plus, 
+  Bot, 
+  Loader2,
   CheckCircle,
-  XCircle,
   AlertCircle,
-  MessageSquare,
-  Zap,
-  Brain,
-  Globe,
-  Cpu,
-  Eye,
-  EyeOff,
-} from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AIProvider, ChatRequest } from "@/types/providers";
-import { clientAIProviderService } from '@/services/clientAIProviderService';
+  BarChart3,
+  Users,
+  Clock,
+  DollarSign
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { useToast } from '@/components/ui/use-toast';
+import Cookies from 'js-cookie';
 
-interface ProviderManagementProps {
-  onProviderSelected?: (provider: AIProvider) => void;
+interface Vendor {
+  id: string;
+  name: string;
+  category: string;
+  rating: number;
+  onTimeDelivery: number;
+  qualityScore: number;
+  avgPriceVsMarket: number;
+  completedOrders: number;
+  performanceTrend: 'improving' | 'stable' | 'declining';
+  contactInfo?: any;
+  capabilities?: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
-const ProviderManagement = ({ onProviderSelected = () => {} }: ProviderManagementProps) => {
-  const [activeTab, setActiveTab] = useState("providers");
-  const [providers, setProviders] = useState<AIProvider[]>([]);
-  const [isAddingProvider, setIsAddingProvider] = useState(false);
-  const [selectedProviderType, setSelectedProviderType] = useState<string>("");
-  const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [connectionError, setConnectionError] = useState("");
-  const [showApiKey, setShowApiKey] = useState(false);
-  
-  // Chat testing state
-  const [selectedProvider, setSelectedProvider] = useState<string>("");
-  const [selectedModel, setSelectedModel] = useState<string>("");
-  const [testMessage, setTestMessage] = useState("Hello! Can you help me test this AI provider connection?");
-  const [chatResponse, setChatResponse] = useState("");
-  const [isTesting, setIsTesting] = useState(false);
+interface VendorRecommendation {
+  vendor: Vendor;
+  score: number;
+  reasoning: string;
+  strengths: string[];
+  concerns: string[];
+}
+
+interface Agent {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+}
+
+const VendorSelection = () => {
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [recommendations, setRecommendations] = useState<VendorRecommendation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showSelectionDialog, setShowSelectionDialog] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const { toast } = useToast();
+
+  const [newVendor, setNewVendor] = useState({
+    name: '',
+    category: '',
+    rating: 0,
+    onTimeDelivery: 0,
+    qualityScore: 0,
+    avgPriceVsMarket: 0,
+    completedOrders: 0,
+    performanceTrend: 'stable' as const,
+    contactInfo: {},
+    capabilities: [] as string[]
+  });
+
+  const [selectionCriteria, setSelectionCriteria] = useState({
+    requirements: '',
+    category: 'all',
+    agentId: '',
+    budget: '',
+    deadline: ''
+  });
+
+  const categories = [
+    'Software Development',
+    'Marketing & Advertising',
+    'Design & Creative',
+    'Consulting',
+    'Manufacturing',
+    'Logistics & Supply Chain',
+    'Professional Services',
+    'Technology & IT',
+    'Other'
+  ];
 
   useEffect(() => {
-    loadProviders();
+    fetchVendors();
+    fetchAgents();
   }, []);
 
-  const loadProviders = async () => {
+  const fetchVendors = async () => {
     try {
-      const providers = clientAIProviderService.getProviders();
-      setProviders(providers.filter(p => p.status === 'connected'));
-    } catch (error) {
-      console.error('Failed to load providers:', error);
-      setProviders([]);
-    }
-  };
+      const token = Cookies.get('auth_token');
+      const response = await fetch(`/api/vendors?category=${selectedCategory}&search=${searchTerm}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-  const handleAddProvider = async () => {
-    if (!selectedProviderType || !apiKey) {
-      setConnectionError("Please select a provider type and enter an API key");
-      return;
-    }
-
-    setIsConnecting(true);
-    setConnectionError("");
-
-    try {
-      let provider;
-      switch (selectedProviderType) {
-        case 'openai':
-          provider = await clientAIProviderService.createOpenAIProvider(apiKey, baseUrl);
-          break;
-        case 'anthropic':
-          provider = await clientAIProviderService.createAnthropicProvider(apiKey);
-          break;
-        case 'google':
-          provider = await clientAIProviderService.createGoogleProvider(apiKey);
-          break;
-        case 'groq':
-          provider = await clientAIProviderService.createGroqProvider(apiKey);
-          break;
-        case 'openrouter':
-          provider = await clientAIProviderService.createOpenRouterProvider(apiKey);
-          break;
-        default:
-          throw new Error('Unsupported provider type');
+      if (response.ok) {
+        const data = await response.json();
+        setVendors(data.vendors || []);
       }
-
-      await loadProviders();
-      setIsAddingProvider(false);
-      setApiKey("");
-      setBaseUrl("");
-      setSelectedProviderType("");
     } catch (error) {
-      setConnectionError(error instanceof Error ? error.message : "Failed to connect to provider");
+      console.error('Error fetching vendors:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch vendors",
+        variant: "destructive",
+      });
     } finally {
-      setIsConnecting(false);
+      setLoading(false);
     }
   };
 
-  const handleRemoveProvider = async (providerId: string) => {
+  const fetchAgents = async () => {
     try {
-      clientAIProviderService.removeProvider(providerId);
-      await loadProviders();
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/agents', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAgents(data.agents || []);
+      }
     } catch (error) {
-      console.error('Failed to remove provider:', error);
+      console.error('Error fetching agents:', error);
     }
   };
 
-  const handleTestProvider = async () => {
-    if (!selectedProvider || !selectedModel || !testMessage) {
+  const addVendor = async () => {
+    if (!newVendor.name || !newVendor.category) {
+      toast({
+        title: "Validation Error",
+        description: "Name and category are required",
+        variant: "destructive",
+      });
       return;
     }
 
-    setIsTesting(true);
-    setChatResponse("");
+    try {
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/vendors', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newVendor),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setVendors([data.vendor, ...vendors]);
+        setNewVendor({
+          name: '',
+          category: '',
+          rating: 0,
+          onTimeDelivery: 0,
+          qualityScore: 0,
+          avgPriceVsMarket: 0,
+          completedOrders: 0,
+          performanceTrend: 'stable',
+          contactInfo: {},
+          capabilities: []
+        });
+        setShowAddDialog(false);
+        toast({
+          title: "Success",
+          description: "Vendor added successfully",
+        });
+      } else {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      console.error('Error adding vendor:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to add vendor",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const performVendorSelection = async () => {
+    if (!selectionCriteria.requirements || !selectionCriteria.agentId) {
+      toast({
+        title: "Validation Error",
+        description: "Requirements and AI agent are required",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
-      const request: ChatRequest = {
-        model: selectedModel,
-        messages: [
-          { role: "user", content: testMessage }
-        ],
-        temperature: 0.7,
-        maxTokens: 500
-      };
+      setAnalyzing(true);
+      const token = Cookies.get('auth_token');
+      const response = await fetch('/api/vendors/select', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(selectionCriteria),
+      });
 
-      const response = await clientAIProviderService.sendChatRequest(selectedProvider, request);
-      setChatResponse(response.choices[0].message.content);
+      if (response.ok) {
+        const data = await response.json();
+        setRecommendations(data.recommendations || []);
+        setShowSelectionDialog(false);
+        toast({
+          title: "Analysis Complete",
+          description: `Generated ${data.recommendations?.length || 0} vendor recommendations`,
+        });
+      } else {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
     } catch (error) {
-      setChatResponse(`Error: ${error instanceof Error ? error.message : "Failed to send message"}`);
+      console.error('Error performing vendor selection:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to analyze vendors",
+        variant: "destructive",
+      });
     } finally {
-      setIsTesting(false);
+      setAnalyzing(false);
     }
   };
 
-  const getProviderIcon = (type: string) => {
-    switch (type) {
-      case "openai":
-        return <Brain className="h-5 w-5 text-green-600" />;
-      case "anthropic":
-        return <MessageSquare className="h-5 w-5 text-orange-600" />;
-      case "google":
-        return <Globe className="h-5 w-5 text-blue-600" />;
-      case "groq":
-        return <Zap className="h-5 w-5 text-purple-600" />;
-      case "openrouter":
-        return <Cpu className="h-5 w-5 text-indigo-600" />;
+  const deleteVendor = async (vendorId: string) => {
+    try {
+      const token = Cookies.get('auth_token');
+      const response = await fetch(`/api/vendors?id=${vendorId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        setVendors(vendors.filter(v => v.id !== vendorId));
+        toast({
+          title: "Success",
+          description: "Vendor deleted successfully",
+        });
+      } else {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      console.error('Error deleting vendor:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete vendor",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getTrendIcon = (trend: string) => {
+    switch (trend) {
+      case 'improving':
+        return <TrendingUp className="h-4 w-4 text-green-500" />;
+      case 'declining':
+        return <TrendingDown className="h-4 w-4 text-red-500" />;
       default:
-        return <Brain className="h-5 w-5 text-gray-600" />;
+        return <Minus className="h-4 w-4 text-gray-500" />;
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "connected":
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case "error":
-        return <XCircle className="h-4 w-4 text-red-500" />;
-      default:
-        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
-    }
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return 'text-green-600';
+    if (score >= 60) return 'text-yellow-600';
+    return 'text-red-600';
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "connected":
-        return "text-green-600 bg-green-50 border-green-200";
-      case "error":
-        return "text-red-600 bg-red-50 border-red-200";
-      default:
-        return "text-yellow-600 bg-yellow-50 border-yellow-200";
-    }
-  };
+  const filteredVendors = vendors.filter(vendor => {
+    const matchesSearch = vendor.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = selectedCategory === 'all' || vendor.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
 
-  const selectedProviderData = providers.find(p => p.id === selectedProvider);
+  useEffect(() => {
+    fetchVendors();
+  }, [selectedCategory, searchTerm]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full h-full bg-background">
-      <Card className="w-full">
-        <CardHeader>
-          <CardTitle>AI Provider Management</CardTitle>
-          <CardDescription>
-            Connect and manage real AI providers including OpenAI, Anthropic, Google AI, Groq, and OpenRouter.
-            Test connections and manage API configurations.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="providers">Providers</TabsTrigger>
-              <TabsTrigger value="models">Models</TabsTrigger>
-              <TabsTrigger value="testing">Live Testing</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="providers" className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h3 className="text-lg font-medium">Connected Providers</h3>
-                <Dialog open={isAddingProvider} onOpenChange={setIsAddingProvider}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add Provider
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-[500px]">
-                    <DialogHeader>
-                      <DialogTitle>Add AI Provider</DialogTitle>
-                      <DialogDescription>
-                        Connect a new AI provider by entering your API credentials.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="provider-type">Provider Type</Label>
-                        <Select value={selectedProviderType} onValueChange={setSelectedProviderType}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select provider" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="openai">OpenAI</SelectItem>
-                            <SelectItem value="anthropic">Anthropic (Claude)</SelectItem>
-                            <SelectItem value="google">Google AI (Gemini)</SelectItem>
-                            <SelectItem value="groq">Groq</SelectItem>
-                            <SelectItem value="openrouter">OpenRouter</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="api-key">API Key</Label>
-                        <div className="relative">
-                          <Input
-                            id="api-key"
-                            type={showApiKey ? "text" : "password"}
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            placeholder="Enter your API key"
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="absolute right-0 top-0 h-full px-3"
-                            onClick={() => setShowApiKey(!showApiKey)}
-                          >
-                            {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {(selectedProviderType === "openai" || selectedProviderType === "groq") && (
-                        <div className="space-y-2">
-                          <Label htmlFor="base-url">Base URL (Optional)</Label>
-                          <Input
-                            id="base-url"
-                            value={baseUrl}
-                            onChange={(e) => setBaseUrl(e.target.value)}
-                            placeholder="Custom API endpoint (optional)"
-                          />
-                        </div>
-                      )}
-
-                      {connectionError && (
-                        <Alert>
-                          <AlertCircle className="h-4 w-4" />
-                          <AlertDescription>{connectionError}</AlertDescription>
-                        </Alert>
-                      )}
-
-                      <div className="flex justify-end gap-2">
-                        <Button variant="outline" onClick={() => setIsAddingProvider(false)}>
-                          Cancel
-                        </Button>
-                        <Button onClick={handleAddProvider} disabled={isConnecting}>
-                          {isConnecting ? "Connecting..." : "Connect Provider"}
-                        </Button>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              <div className="grid gap-4">
-                {providers.length === 0 ? (
-                  <Card>
-                    <CardContent className="p-6 text-center">
-                      <Brain className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                      <h3 className="text-lg font-medium mb-2">No Providers Connected</h3>
-                      <p className="text-muted-foreground mb-4">
-                        Connect your first AI provider to start building intelligent workflows.
-                      </p>
-                      <Button onClick={() => setIsAddingProvider(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Provider
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  providers.map((provider) => (
-                    <Card key={provider.id} className="bg-background">
-                      <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            {getProviderIcon(provider.type)}
-                            <div>
-                              <h4 className="font-semibold text-lg">{provider.name}</h4>
-                              <p className="text-sm text-muted-foreground">
-                                {provider.models.length} models available
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Badge className={getStatusColor(provider.status)}>
-                              {getStatusIcon(provider.status)}
-                              <span className="ml-1 capitalize">{provider.status}</span>
-                            </Badge>
-                            <Button variant="outline" size="sm">
-                              <Settings className="h-4 w-4" />
-                            </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="outline" size="sm">
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Remove Provider</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Are you sure you want to remove {provider.name}? This action cannot be undone.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleRemoveProvider(provider.id)}>
-                                    Remove
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="models" className="space-y-4">
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Model</TableHead>
-                      <TableHead>Provider</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Context Length</TableHead>
-                      <TableHead>Capabilities</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {providers.flatMap(provider => 
-                      provider.models.map(model => (
-                        <TableRow key={`${provider.id}-${model.id}`}>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{model.name}</div>
-                              <div className="text-sm text-muted-foreground">{model.id}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {getProviderIcon(provider.type)}
-                              {provider.name}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{model.type}</Badge>
-                          </TableCell>
-                          <TableCell>{model.contextLength.toLocaleString()}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {model.capabilities.slice(0, 3).map(cap => (
-                                <Badge key={cap} variant="secondary" className="text-xs">
-                                  {cap}
-                                </Badge>
-                              ))}
-                              {model.capabilities.length > 3 && (
-                                <Badge variant="secondary" className="text-xs">
-                                  +{model.capabilities.length - 3}
-                                </Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {getStatusIcon(provider.status)}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="testing" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Live Provider Testing</CardTitle>
-                  <CardDescription>
-                    Test your AI providers with real API calls to ensure they're working correctly.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Provider</Label>
-                      <Select value={selectedProvider} onValueChange={setSelectedProvider}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select provider" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {providers.filter(p => p.status === 'connected').map(provider => (
-                            <SelectItem key={provider.id} value={provider.id}>
-                              <div className="flex items-center gap-2">
-                                {getProviderIcon(provider.type)}
-                                {provider.name}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Model</Label>
-                      <Select value={selectedModel} onValueChange={setSelectedModel}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {selectedProviderData?.models.map(model => (
-                            <SelectItem key={model.id} value={model.id}>
-                              {model.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+    <div className="space-y-6 bg-white min-h-screen p-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold">Smart Vendor Selection</h2>
+          <p className="text-gray-600">AI-powered vendor analysis and selection</p>
+        </div>
+        <div className="flex space-x-2">
+          <Dialog open={showSelectionDialog} onOpenChange={setShowSelectionDialog}>
+            <DialogTrigger asChild>
+              <Button>
+                <Bot className="h-4 w-4 mr-2" />
+                AI Selection
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>AI Vendor Selection</DialogTitle>
+                <DialogDescription>
+                  Let AI analyze and recommend the best vendors for your requirements
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="requirements">Requirements Description</Label>
+                  <Textarea
+                    id="requirements"
+                    value={selectionCriteria.requirements}
+                    onChange={(e) => setSelectionCriteria({ ...selectionCriteria, requirements: e.target.value })}
+                    placeholder="Describe what you need from vendors (services, timeline, quality requirements, etc.)"
+                    rows={4}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="category">Category</Label>
+                    <Select value={selectionCriteria.category} onValueChange={(value) => setSelectionCriteria({ ...selectionCriteria, category: value })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        {categories.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label>Test Message</Label>
-                    <Textarea
-                      value={testMessage}
-                      onChange={(e) => setTestMessage(e.target.value)}
-                      placeholder="Enter a message to test the AI provider..."
-                      rows={3}
+                  <div>
+                    <Label htmlFor="agent">AI Agent</Label>
+                    <Select value={selectionCriteria.agentId} onValueChange={(value) => setSelectionCriteria({ ...selectionCriteria, agentId: value })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select AI agent" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {agents.filter(agent => agent.status === 'active').map((agent) => (
+                          <SelectItem key={agent.id} value={agent.id}>
+                            {agent.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="budget">Budget (Optional)</Label>
+                    <Input
+                      id="budget"
+                      value={selectionCriteria.budget}
+                      onChange={(e) => setSelectionCriteria({ ...selectionCriteria, budget: e.target.value })}
+                      placeholder="e.g., $10,000"
                     />
                   </div>
-
-                  <Button 
-                    onClick={handleTestProvider} 
-                    disabled={!selectedProvider || !selectedModel || !testMessage || isTesting}
-                    className="w-full"
-                  >
-                    {isTesting ? "Testing..." : "Send Test Message"}
+                  <div>
+                    <Label htmlFor="deadline">Deadline (Optional)</Label>
+                    <Input
+                      id="deadline"
+                      type="date"
+                      value={selectionCriteria.deadline}
+                      onChange={(e) => setSelectionCriteria({ ...selectionCriteria, deadline: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={() => setShowSelectionDialog(false)}>
+                    Cancel
                   </Button>
+                  <Button onClick={performVendorSelection} disabled={analyzing}>
+                    {analyzing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Analyze Vendors
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Vendor
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Add New Vendor</DialogTitle>
+                <DialogDescription>
+                  Add a new vendor to your database
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="name">Vendor Name</Label>
+                    <Input
+                      id="name"
+                      value={newVendor.name}
+                      onChange={(e) => setNewVendor({ ...newVendor, name: e.target.value })}
+                      placeholder="Company name"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="category">Category</Label>
+                    <Select value={newVendor.category} onValueChange={(value) => setNewVendor({ ...newVendor, category: value })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="rating">Rating (1-5)</Label>
+                    <Input
+                      id="rating"
+                      type="number"
+                      min="1"
+                      max="5"
+                      step="0.1"
+                      value={newVendor.rating}
+                      onChange={(e) => setNewVendor({ ...newVendor, rating: parseFloat(e.target.value) })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="onTimeDelivery">On-Time Delivery (%)</Label>
+                    <Input
+                      id="onTimeDelivery"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={newVendor.onTimeDelivery}
+                      onChange={(e) => setNewVendor({ ...newVendor, onTimeDelivery: parseFloat(e.target.value) })}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="qualityScore">Quality Score (%)</Label>
+                    <Input
+                      id="qualityScore"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={newVendor.qualityScore}
+                      onChange={(e) => setNewVendor({ ...newVendor, qualityScore: parseFloat(e.target.value) })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="avgPriceVsMarket">Price vs Market (%)</Label>
+                    <Input
+                      id="avgPriceVsMarket"
+                      type="number"
+                      value={newVendor.avgPriceVsMarket}
+                      onChange={(e) => setNewVendor({ ...newVendor, avgPriceVsMarket: parseFloat(e.target.value) })}
+                      placeholder="Negative = cheaper, Positive = more expensive"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="completedOrders">Completed Orders</Label>
+                    <Input
+                      id="completedOrders"
+                      type="number"
+                      min="0"
+                      value={newVendor.completedOrders}
+                      onChange={(e) => setNewVendor({ ...newVendor, completedOrders: parseInt(e.target.value) })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="performanceTrend">Performance Trend</Label>
+                    <Select value={newVendor.performanceTrend} onValueChange={(value: any) => setNewVendor({ ...newVendor, performanceTrend: value })}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="improving">Improving</SelectItem>
+                        <SelectItem value="stable">Stable</SelectItem>
+                        <SelectItem value="declining">Declining</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={() => setShowAddDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={addVendor}>
+                    Add Vendor
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
 
-                  {chatResponse && (
-                    <div className="space-y-2">
-                      <Label>Response</Label>
-                      <div className="p-4 bg-muted rounded-md">
-                        <pre className="whitespace-pre-wrap text-sm">{chatResponse}</pre>
+      <Tabs defaultValue="vendors" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="vendors">All Vendors</TabsTrigger>
+          <TabsTrigger value="recommendations">AI Recommendations</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="vendors" className="space-y-6">
+          <div className="flex items-center space-x-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search vendors..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Filter by category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {categories.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {filteredVendors.length === 0 ? (
+            <Card>
+              <CardContent className="text-center py-8">
+                <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Vendors Found</h3>
+                <p className="text-gray-500 mb-4">Add vendors to start using AI-powered selection</p>
+                <Button onClick={() => setShowAddDialog(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Your First Vendor
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredVendors.map((vendor) => (
+                <Card key={vendor.id}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">{vendor.name}</CardTitle>
+                      <div className="flex items-center">
+                        <Star className="h-4 w-4 text-yellow-500 mr-1" />
+                        <span className="text-sm font-medium">{vendor.rating.toFixed(1)}</span>
                       </div>
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+                    <CardDescription>{vendor.category}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">On-Time Delivery:</span>
+                        <span className="font-medium">{vendor.onTimeDelivery}%</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Quality Score:</span>
+                        <span className="font-medium">{vendor.qualityScore}%</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Price vs Market:</span>
+                        <span className={`font-medium ${vendor.avgPriceVsMarket <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {vendor.avgPriceVsMarket > 0 ? '+' : ''}{vendor.avgPriceVsMarket}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Completed Orders:</span>
+                        <span className="font-medium">{vendor.completedOrders}</span>
+                      </div>
+                      <div className="flex justify-between text-sm items-center">
+                        <span className="text-gray-500">Trend:</span>
+                        <div className="flex items-center">
+                          {getTrendIcon(vendor.performanceTrend)}
+                          <span className="ml-1 font-medium capitalize">{vendor.performanceTrend}</span>
+                        </div>
+                      </div>
+                      <div className="pt-3 border-t">
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => deleteVendor(vendor.id)}
+                          className="w-full"
+                        >
+                          Remove Vendor
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="recommendations" className="space-y-6">
+          {recommendations.length === 0 ? (
+            <Card>
+              <CardContent className="text-center py-8">
+                <Bot className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Recommendations Yet</h3>
+                <p className="text-gray-500 mb-4">Use AI Selection to get vendor recommendations</p>
+                <Button onClick={() => setShowSelectionDialog(true)}>
+                  <Bot className="h-4 w-4 mr-2" />
+                  Start AI Analysis
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h3 className="text-lg font-medium">AI Vendor Recommendations</h3>
+                <p className="text-gray-500">Ranked by AI analysis score</p>
+              </div>
+              <div className="space-y-4">
+                {recommendations.map((rec, index) => (
+                  <Card key={rec.vendor.id} className="relative">
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full font-bold">
+                            #{index + 1}
+                          </div>
+                          <div>
+                            <CardTitle className="text-lg">{rec.vendor.name}</CardTitle>
+                            <CardDescription>{rec.vendor.category}</CardDescription>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`text-2xl font-bold ${getScoreColor(rec.score)}`}>
+                            {rec.score}
+                          </div>
+                          <div className="text-sm text-gray-500">AI Score</div>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div>
+                          <Progress value={rec.score} className="w-full" />
+                        </div>
+                        
+                        <div>
+                          <h4 className="font-medium text-sm mb-2">AI Analysis</h4>
+                          <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded">
+                            {rec.reasoning}
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <h4 className="font-medium text-sm mb-2 text-green-700">Strengths</h4>
+                            <ul className="text-sm space-y-1">
+                              {rec.strengths.map((strength, idx) => (
+                                <li key={idx} className="flex items-start">
+                                  <CheckCircle className="h-3 w-3 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                                  {strength}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          
+                          {rec.concerns.length > 0 && (
+                            <div>
+                              <h4 className="font-medium text-sm mb-2 text-yellow-700">Considerations</h4>
+                              <ul className="text-sm space-y-1">
+                                {rec.concerns.map((concern, idx) => (
+                                  <li key={idx} className="flex items-start">
+                                    <AlertCircle className="h-3 w-3 text-yellow-500 mr-2 mt-0.5 flex-shrink-0" />
+                                    {concern}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-4 pt-3 border-t text-center">
+                          <div>
+                            <div className="text-lg font-bold">{rec.vendor.rating.toFixed(1)}</div>
+                            <div className="text-xs text-gray-500">Rating</div>
+                          </div>
+                          <div>
+                            <div className="text-lg font-bold">{rec.vendor.onTimeDelivery}%</div>
+                            <div className="text-xs text-gray-500">On-Time</div>
+                          </div>
+                          <div>
+                            <div className="text-lg font-bold">{rec.vendor.qualityScore}%</div>
+                            <div className="text-xs text-gray-500">Quality</div>
+                          </div>
+                          <div>
+                            <div className={`text-lg font-bold ${rec.vendor.avgPriceVsMarket <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {rec.vendor.avgPriceVsMarket > 0 ? '+' : ''}{rec.vendor.avgPriceVsMarket}%
+                            </div>
+                            <div className="text-xs text-gray-500">Price</div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
 
-export default ProviderManagement;
+export default VendorSelection;

@@ -7,6 +7,10 @@ import { nanoid } from 'nanoid';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required');
+}
+
 async function verifyAuth(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -14,7 +18,7 @@ async function verifyAuth(request: NextRequest) {
   }
 
   const token = authHeader.substring(7);
-  const decoded = jwt.verify(token, JWT_SECRET!) as { userId: string };
+  const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
   return decoded.userId;
 }
 
@@ -42,9 +46,9 @@ export async function POST(request: NextRequest) {
     const userId = await verifyAuth(request);
     const { name, description, prompt, provider, model } = await request.json();
 
-    if (!name || !prompt || !provider || !model) {
+    if (!name || !prompt || !provider) {
       return NextResponse.json(
-        { message: 'Name, prompt, provider, and model are required' },
+        { message: 'Name, prompt, and provider are required' },
         { status: 400 }
       );
     }
@@ -57,8 +61,8 @@ export async function POST(request: NextRequest) {
       description: description || '',
       prompt,
       provider,
-      model,
-      status: 'active' as const,
+      model: model || 'default',
+      status: 'active',
       totalRuns: 0,
       successfulRuns: 0,
       createdAt: new Date(),
@@ -82,58 +86,6 @@ export async function POST(request: NextRequest) {
     console.error('Create agent error:', error);
     return NextResponse.json(
       { message: 'Failed to create agent' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PUT(request: NextRequest) {
-  try {
-    const userId = await verifyAuth(request);
-    const { id, name, description, prompt, provider, model, status } = await request.json();
-
-    if (!id) {
-      return NextResponse.json(
-        { message: 'Agent ID is required' },
-        { status: 400 }
-      );
-    }
-
-    const updatedAgent = await db.update(agents)
-      .set({
-        name,
-        description,
-        prompt,
-        provider,
-        model,
-        status,
-        updatedAt: new Date()
-      })
-      .where(eq(agents.id, id))
-      .returning();
-
-    if (updatedAgent.length === 0) {
-      return NextResponse.json(
-        { message: 'Agent not found' },
-        { status: 404 }
-      );
-    }
-
-    // Log activity
-    await db.insert(activities).values({
-      id: nanoid(),
-      userId,
-      type: 'agent_updated',
-      message: `Updated agent: ${name}`,
-      status: 'success',
-      createdAt: new Date()
-    });
-
-    return NextResponse.json({ agent: updatedAgent[0] });
-  } catch (error) {
-    console.error('Update agent error:', error);
-    return NextResponse.json(
-      { message: 'Failed to update agent' },
       { status: 500 }
     );
   }

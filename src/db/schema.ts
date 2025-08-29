@@ -29,14 +29,25 @@ export const agents = pgTable('agents', {
   name: text('name').notNull(),
   description: text('description'),
   prompt: text('prompt').notNull(),
-  provider: text('provider').notNull(),
-  model: text('model').notNull(),
+  provider: text('provider').notNull().references(() => aiProviders.id, { onDelete: 'cascade' }),
+  model: text('model').notNull().references(() => aiModels.id, { onDelete: 'cascade' }),
   status: text('status', { enum: ['active', 'inactive', 'error'] }).notNull().default('active'),
   totalRuns: integer('total_runs').notNull().default(0),
   successfulRuns: integer('successful_runs').notNull().default(0),
-  lastRun: timestamp('last_run'),
+  lastRun: timestamp('last_run'), 
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// AI Models table
+
+export const aiModels = pgTable('ai_models', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  provider: text('provider').notNull().references(() => aiProviders.id, { onDelete: 'cascade' }),
 });
 
 // Workflows table
@@ -142,6 +153,39 @@ export const vendorProposals = pgTable('vendor_proposals', {
   aiScore: decimal('ai_score', { precision: 5, scale: 2 }),
   aiAnalysis: jsonb('ai_analysis'),
   status: text('status', { enum: ['submitted', 'under_review', 'accepted', 'rejected'] }).notNull().default('submitted'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+
+// Agent Executions table
+export const agentExecutions = pgTable('agent_executions', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: text('status', { enum: ['pending', 'running', 'completed', 'failed'] }).notNull().default('pending'),
+  input: jsonb('input'),
+  output: jsonb('output'),
+  error: text('error'),
+  startedAt: timestamp('started_at'),
+  completedAt: timestamp('completed_at'),
+  duration: integer('duration'),
+  tokenUsage: jsonb('token_usage'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+
+// Activity Feed table
+export const activityFeed = pgTable('activity_feed', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  message: text('message').notNull(),
+  entityType: text('entity_type'),
+  entityId: text('entity_id'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

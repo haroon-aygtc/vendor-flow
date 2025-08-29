@@ -12,6 +12,8 @@ import { AlertCircle, CheckCircle, TrendingUp, TrendingDown, Minus, Brain, FileT
 import { clientAIProviderService } from '@/services/clientAIProviderService';
 import { ChatRequest } from '@/types/providers';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useToast } from '@/components/ui/use-toast';
+import Cookies from 'js-cookie';
 
 interface Vendor {
   id: string;
@@ -49,6 +51,7 @@ interface Agent {
 }
 
 export default function SmartVendorSelection() {
+  const { toast } = useToast();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>('');
@@ -68,25 +71,54 @@ export default function SmartVendorSelection() {
   const [showGuide, setShowGuide] = useState(true);
 
   useEffect(() => {
-    loadVendorsFromStorage();
+    loadVendorsFromDatabase();
     loadAgents();
   }, []);
 
-  const loadVendorsFromStorage = () => {
-    const savedVendors = localStorage.getItem('vendor-database');
-    if (savedVendors) {
-      try {
-        const vendorData = JSON.parse(savedVendors);
-        setVendors(vendorData);
-      } catch (error) {
-        console.error('Error loading vendor data:', error);
-        setVendors([]);
+  const loadVendorsFromDatabase = async () => {
+    try {
+      const token = Cookies.get('auth_token');
+      if (!token) return;
+
+      const response = await fetch('/api/vendors', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setVendors(data.vendors || []);
       }
+    } catch (error) {
+      console.error('Error loading vendor data:', error);
+      setVendors([]);
     }
   };
 
-  const saveVendorsToStorage = (vendorData: Vendor[]) => {
-    localStorage.setItem('vendor-database', JSON.stringify(vendorData));
+  const saveVendorsToDatabase = async (vendorData: Vendor[]) => {
+    try {
+      const token = Cookies.get('auth_token');
+      if (!token) return;
+
+      // Update vendors in database
+      for (const vendor of vendorData) {
+        if (vendor.id.startsWith('V')) {
+          // New vendor, create it
+          await fetch('/api/vendors', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(vendor),
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error saving vendor data:', error);
+    }
   };
 
   const loadAgents = () => {
@@ -104,7 +136,11 @@ export default function SmartVendorSelection() {
 
   const handleAIAnalysis = async () => {
     if (!selectedAgent || !procurementRequest.category) {
-      alert('Please select an AI agent and specify procurement requirements');
+      toast({
+        title: "Validation Error",
+        description: "Please select an AI agent and specify procurement requirements",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -115,7 +151,7 @@ export default function SmartVendorSelection() {
       const agent = agents.find(a => a.id === selectedAgent);
       if (!agent) throw new Error('Agent not found');
 
-      const categoryVendors = vendors.filter(v => 
+      const categoryVendors = vendors.filter(v =>
         v.category.toLowerCase() === procurementRequest.category.toLowerCase()
       );
 
@@ -124,7 +160,7 @@ export default function SmartVendorSelection() {
         return;
       }
 
-      const vendorData = categoryVendors.map(v => 
+      const vendorData = categoryVendors.map(v =>
         `Vendor: ${v.name}
 - Rating: ${v.rating}/5
 - On-time Delivery: ${v.onTimeDelivery}%
@@ -167,7 +203,7 @@ Format your response clearly with vendor names, scores, and detailed explanation
 
       const response = await clientAIProviderService.sendChatRequest(agent.providerId, chatRequest);
       const aiAnalysis = response.choices[0].message.content;
-      
+
       setAnalysisResult(aiAnalysis);
 
       const structuredRecommendations = categoryVendors.map(vendor => {
@@ -294,7 +330,7 @@ Format your response clearly with vendor names, scores, and detailed explanation
             qualityScore: Math.min(100, Math.max(0, parseFloat(values[5]) || 80)),
             avgPriceVsMarket: parseFloat(values[6]) || 0,
             completedOrders: Math.max(0, parseInt(values[7]) || 0),
-            performanceTrend: (['improving', 'stable', 'declining'].includes(values[8]?.toLowerCase()) 
+            performanceTrend: (['improving', 'stable', 'declining'].includes(values[8]?.toLowerCase())
               ? values[8].toLowerCase() : 'stable') as 'improving' | 'stable' | 'declining'
           };
           newVendors.push(vendor);
@@ -303,8 +339,11 @@ Format your response clearly with vendor names, scores, and detailed explanation
 
       const updatedVendors = [...vendors, ...newVendors];
       setVendors(updatedVendors);
-      saveVendorsToStorage(updatedVendors);
-      alert(`Successfully imported ${newVendors.length} vendors from CSV`);
+      saveVendorsToDatabase(newVendors);
+      toast({
+        title: "Success",
+        description: `Successfully imported ${newVendors.length} vendors from CSV`,
+      });
     } catch (error) {
       alert('Error parsing CSV file. Please check the format and try again.');
     } finally {
@@ -334,9 +373,9 @@ Format your response clearly with vendor names, scores, and detailed explanation
             <h1 className="text-3xl font-bold text-gray-900">Smart Vendor Selection Tool</h1>
             <p className="text-gray-600 mt-2">AI-Powered Procurement Automation System</p>
             <div className="flex justify-center mt-4">
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowGuide(!showGuide)}
                 className="flex items-center gap-2"
               >
@@ -438,16 +477,16 @@ Format your response clearly with vendor names, scores, and detailed explanation
                       <Label htmlFor="category">Category</Label>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Select 
-                            value={procurementRequest.category} 
+                          <Select
+                            value={procurementRequest.category}
                             onValueChange={(value) => setProcurementRequest(prev => ({ ...prev, category: value }))}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select category" />
                             </SelectTrigger>
                             <SelectContent>
-                              {[...new Set(vendors.map(v => v.category))].map(category => (
-                                <SelectItem key={category} value={category}>{category}</SelectItem>
+                              {Array.from(new Set(vendors.map(v => v.category))).sort().map(category => (
+                                <SelectItem key={`category-${category}`} value={category}>{category}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -497,8 +536,8 @@ Format your response clearly with vendor names, scores, and detailed explanation
                         <Label htmlFor="urgency">Urgency</Label>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Select 
-                              value={procurementRequest.urgency} 
+                            <Select
+                              value={procurementRequest.urgency}
                               onValueChange={(value: any) => setProcurementRequest(prev => ({ ...prev, urgency: value }))}
                             >
                               <SelectTrigger>
@@ -520,8 +559,8 @@ Format your response clearly with vendor names, scores, and detailed explanation
 
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button 
-                          onClick={handleAIAnalysis} 
+                        <Button
+                          onClick={handleAIAnalysis}
                           disabled={isAnalyzing || !selectedAgent || !procurementRequest.category}
                           className="w-full"
                         >
@@ -574,7 +613,7 @@ Format your response clearly with vendor names, scores, and detailed explanation
                       <Database className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                       <h3 className="text-lg font-medium text-gray-900 mb-2">No Vendor Data</h3>
                       <p className="text-gray-500 mb-4">Import vendor data from CSV to get started</p>
-                      <Button onClick={() => document.querySelector('input[type="file"]')?.click()}>
+                      <Button onClick={() => (document.querySelector('input[type="file"]') as HTMLInputElement)?.click()}>
                         <Upload className="h-4 w-4 mr-2" />
                         Import Vendor Data
                       </Button>
@@ -593,7 +632,7 @@ Format your response clearly with vendor names, scores, and detailed explanation
                               <span className="text-sm capitalize">{vendor.performanceTrend}</span>
                             </div>
                           </div>
-                          
+
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                             <div>
                               <div className="text-gray-500">Rating</div>
@@ -661,14 +700,14 @@ Format your response clearly with vendor names, scores, and detailed explanation
                       </TooltipContent>
                     </Tooltip>
                   </div>
-                  
+
                   <div className="text-sm text-gray-600">
                     <p className="font-medium">Required CSV format:</p>
                     <code className="block bg-gray-100 p-2 rounded mt-2 text-xs">
                       Vendor_ID,Vendor_Name,Category,Vendor_Rating,On_Time_Delivery_%,Quality_Score,Avg_Price_vs_Market,Completed_Orders,Performance_Trend
                     </code>
                     <p className="mt-2 text-xs">
-                      <strong>Performance_Trend:</strong> must be "improving", "stable", or "declining"<br/>
+                      <strong>Performance_Trend:</strong> must be "improving", "stable", or "declining"<br />
                       <strong>Ratings:</strong> 0-5 scale, Percentages: 0-100, Price: negative is better than market
                     </p>
                   </div>
@@ -728,7 +767,7 @@ Format your response clearly with vendor names, scores, and detailed explanation
                               <div className="text-lg font-medium">{rec.vendor.completedOrders}</div>
                             </div>
                           </div>
-                          
+
                           <div className="bg-blue-50 p-3 rounded-lg">
                             <div className="text-sm font-medium text-blue-800 mb-1">AI Analysis:</div>
                             <div className="text-sm text-blue-700">{rec.reasoning}</div>

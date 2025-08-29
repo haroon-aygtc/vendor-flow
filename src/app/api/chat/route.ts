@@ -3,8 +3,8 @@ import { databaseAIProviderService } from '@/services/databaseAIProviderService'
 
 export async function POST(request: NextRequest) {
   try {
-    const { providerId, ...chatRequest } = await request.json();
-    const response = await databaseAIProviderService.sendChatRequest(providerId, chatRequest);
+    const { provider, ...chatRequest } = await request.json();
+    const response = await databaseAIProviderService.sendChatRequest(provider, chatRequest);
     return NextResponse.json(response);
   } catch (error) {
     console.error('Failed to send chat request:', error);

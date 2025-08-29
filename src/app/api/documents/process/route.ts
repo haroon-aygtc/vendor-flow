@@ -30,11 +30,11 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
         reject(err);
         return;
       }
-      
+
       const text = data?.pages
         ?.map(page => page.content?.map(item => item.str).join(' '))
         .join('\n') || '';
-      
+
       resolve(text);
     });
   });
@@ -81,13 +81,13 @@ Please respond in JSON format with the following structure:
 
   // Call AI provider (similar to agent testing)
   let response: string;
-  
+
   switch (agent.provider.toLowerCase()) {
     case 'openai':
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${agent.apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
   try {
     const userId = await verifyAuth(request);
     const formData = await request.formData();
-    
+
     const file = formData.get('file') as File;
     const agentId = formData.get('agentId') as string;
 
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
     const fileName = `${nanoid()}_${file.name}`;
     const filePath = join(uploadsDir, fileName);
-    
+
     await writeFile(filePath, buffer);
 
     // Create document record
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
 
     // Extract text based on file type
     let extractedText: string;
-    
+
     try {
       if (file.type === 'application/pdf') {
         extractedText = await extractTextFromPDF(filePath);
