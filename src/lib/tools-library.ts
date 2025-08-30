@@ -1,764 +1,546 @@
 import { nanoid } from 'nanoid';
 
-export interface ToolDefinition {
+export interface ToolTemplate {
   id: string;
   name: string;
   description: string;
   category: string;
-  type: 'api' | 'webhook' | 'integration' | 'function';
+  type: 'api' | 'webhook' | 'integration' | 'utility' | 'ai-model';
   configuration: {
-    endpoint?: string;
-    method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
-    headers?: Record<string, string>;
-    authentication?: {
-      type: 'bearer' | 'api_key' | 'oauth' | 'basic';
-      key?: string;
-      value?: string;
-    };
-    parameters?: Array<{
-      name: string;
-      type: 'string' | 'number' | 'boolean' | 'object';
+    [key: string]: {
+      type: 'string' | 'number' | 'boolean' | 'select' | 'textarea' | 'password';
+      label: string;
       required: boolean;
-      description: string;
-      default?: any;
-    }>;
+      placeholder?: string;
+      options?: string[];
+      description?: string;
+    };
   };
-  inputSchema: any;
-  outputSchema: any;
-  examples: Array<{
-    input: any;
-    output: any;
-    description: string;
-  }>;
+  capabilities: string[];
   tags: string[];
+  icon: string;
   difficulty: 'beginner' | 'intermediate' | 'advanced';
   estimatedSetupTime: string;
-  icon: string;
-  isActive: boolean;
+  documentation?: string;
+  examples?: Array<{
+    title: string;
+    description: string;
+    code: string;
+  }>;
 }
 
-export const TOOLS_LIBRARY: ToolDefinition[] = [
+export const TOOLS_LIBRARY: ToolTemplate[] = [
   {
-    id: 'slack-notification',
-    name: 'Slack Notification',
-    description: 'Send messages and notifications to Slack channels',
-    category: 'Communication',
-    type: 'webhook',
+    id: 'openai-gpt',
+    name: 'OpenAI GPT',
+    description: 'Access OpenAI GPT models for text generation and completion',
+    category: 'AI Models',
+    type: 'ai-model',
     configuration: {
-      endpoint: 'https://hooks.slack.com/services/{workspace}/{channel}/{token}',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+      apiKey: {
+        type: 'password',
+        label: 'API Key',
+        required: true,
+        placeholder: 'sk-...',
+        description: 'Your OpenAI API key'
       },
-      authentication: {
-        type: 'bearer',
-        key: 'Authorization',
-        value: 'Bearer {slack_bot_token}'
+      model: {
+        type: 'select',
+        label: 'Model',
+        required: true,
+        options: ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k'],
+        description: 'Choose the GPT model to use'
       },
-      parameters: [
-        {
-          name: 'channel',
-          type: 'string',
-          required: true,
-          description: 'Slack channel ID or name',
-          default: '#general'
-        },
-        {
-          name: 'message',
-          type: 'string',
-          required: true,
-          description: 'Message content to send'
-        },
-        {
-          name: 'username',
-          type: 'string',
-          required: false,
-          description: 'Bot username for the message',
-          default: 'AI Agent'
-        },
-        {
-          name: 'icon_emoji',
-          type: 'string',
-          required: false,
-          description: 'Emoji icon for the bot',
-          default: ':robot_face:'
-        }
-      ]
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        channel: { type: 'string' },
-        message: { type: 'string' },
-        username: { type: 'string' },
-        icon_emoji: { type: 'string' }
+      temperature: {
+        type: 'number',
+        label: 'Temperature',
+        required: false,
+        placeholder: '0.7',
+        description: 'Controls randomness (0-2)'
       },
-      required: ['channel', 'message']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message_id: { type: 'string' },
-        timestamp: { type: 'string' }
+      maxTokens: {
+        type: 'number',
+        label: 'Max Tokens',
+        required: false,
+        placeholder: '2048',
+        description: 'Maximum tokens in response'
       }
     },
-    examples: [
-      {
-        input: {
-          channel: '#alerts',
-          message: 'Document processing completed successfully',
-          username: 'Document Processor',
-          icon_emoji: ':page_facing_up:'
-        },
-        output: {
-          success: true,
-          message_id: 'msg_123456',
-          timestamp: '2024-01-15T10:30:00Z'
-        },
-        description: 'Send a document processing completion notification'
-      }
-    ],
-    tags: ['slack', 'notification', 'communication', 'webhook'],
+    capabilities: ['text-generation', 'completion', 'chat', 'analysis'],
+    tags: ['openai', 'gpt', 'llm', 'text-generation'],
+    icon: '🤖',
     difficulty: 'beginner',
     estimatedSetupTime: '2 minutes',
-    icon: '💬',
-    isActive: true
-  },
-  {
-    id: 'github-issue-creator',
-    name: 'GitHub Issue Creator',
-    description: 'Create and manage GitHub issues automatically',
-    category: 'Development',
-    type: 'api',
-    configuration: {
-      endpoint: 'https://api.github.com/repos/{owner}/{repo}/issues',
-      method: 'POST',
-      headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'AI-Agent-Platform'
-      },
-      authentication: {
-        type: 'bearer',
-        key: 'Authorization',
-        value: 'token {github_token}'
-      },
-      parameters: [
-        {
-          name: 'owner',
-          type: 'string',
-          required: true,
-          description: 'GitHub repository owner'
-        },
-        {
-          name: 'repo',
-          type: 'string',
-          required: true,
-          description: 'GitHub repository name'
-        },
-        {
-          name: 'title',
-          type: 'string',
-          required: true,
-          description: 'Issue title'
-        },
-        {
-          name: 'body',
-          type: 'string',
-          required: false,
-          description: 'Issue description'
-        },
-        {
-          name: 'labels',
-          type: 'object',
-          required: false,
-          description: 'Array of label names'
-        },
-        {
-          name: 'assignees',
-          type: 'object',
-          required: false,
-          description: 'Array of GitHub usernames to assign'
-        }
-      ]
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        owner: { type: 'string' },
-        repo: { type: 'string' },
-        title: { type: 'string' },
-        body: { type: 'string' },
-        labels: { type: 'array', items: { type: 'string' } },
-        assignees: { type: 'array', items: { type: 'string' } }
-      },
-      required: ['owner', 'repo', 'title']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        issue_number: { type: 'number' },
-        issue_url: { type: 'string' },
-        created_at: { type: 'string' }
-      }
-    },
+    documentation: 'https://platform.openai.com/docs/api-reference',
     examples: [
       {
-        input: {
-          owner: 'mycompany',
-          repo: 'myproject',
-          title: 'Bug: Login form validation error',
-          body: 'Users are experiencing validation errors when submitting the login form with special characters.',
-          labels: ['bug', 'frontend', 'high-priority'],
-          assignees: ['developer1']
-        },
-        output: {
-          success: true,
-          issue_number: 42,
-          issue_url: 'https://github.com/mycompany/myproject/issues/42',
-          created_at: '2024-01-15T10:30:00Z'
-        },
-        description: 'Create a bug report issue with labels and assignee'
+        title: 'Basic Text Generation',
+        description: 'Generate text based on a prompt',
+        code: `const response = await openai.chat.completions.create({
+  model: "gpt-4",
+  messages: [{ role: "user", content: "Write a summary about AI" }],
+  temperature: 0.7
+});`
       }
-    ],
-    tags: ['github', 'issues', 'development', 'api'],
-    difficulty: 'intermediate',
-    estimatedSetupTime: '3 minutes',
-    icon: '🐙',
-    isActive: true
+    ]
   },
   {
-    id: 'email-sender',
-    name: 'Email Sender (SMTP)',
-    description: 'Send emails via SMTP for notifications and reports',
+    id: 'anthropic-claude',
+    name: 'Anthropic Claude',
+    description: 'Access Claude AI models for advanced reasoning and analysis',
+    category: 'AI Models',
+    type: 'ai-model',
+    configuration: {
+      apiKey: {
+        type: 'password',
+        label: 'API Key',
+        required: true,
+        placeholder: 'sk-ant-...',
+        description: 'Your Anthropic API key'
+      },
+      model: {
+        type: 'select',
+        label: 'Model',
+        required: true,
+        options: ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'],
+        description: 'Choose the Claude model to use'
+      },
+      maxTokens: {
+        type: 'number',
+        label: 'Max Tokens',
+        required: false,
+        placeholder: '4096',
+        description: 'Maximum tokens in response'
+      }
+    },
+    capabilities: ['reasoning', 'analysis', 'coding', 'writing'],
+    tags: ['anthropic', 'claude', 'llm', 'reasoning'],
+    icon: '🧠',
+    difficulty: 'beginner',
+    estimatedSetupTime: '2 minutes'
+  },
+  {
+    id: 'slack-integration',
+    name: 'Slack Integration',
+    description: 'Send notifications and messages to Slack channels',
     category: 'Communication',
     type: 'integration',
     configuration: {
-      endpoint: 'smtp://{smtp_host}:{smtp_port}',
-      authentication: {
-        type: 'basic',
-        key: 'username',
-        value: '{smtp_username}'
+      botToken: {
+        type: 'password',
+        label: 'Bot Token',
+        required: true,
+        placeholder: 'xoxb-...',
+        description: 'Slack Bot User OAuth Token'
       },
-      parameters: [
-        {
-          name: 'smtp_host',
-          type: 'string',
-          required: true,
-          description: 'SMTP server hostname'
-        },
-        {
-          name: 'smtp_port',
-          type: 'number',
-          required: true,
-          description: 'SMTP server port',
-          default: 587
-        },
-        {
-          name: 'from_email',
-          type: 'string',
-          required: true,
-          description: 'Sender email address'
-        },
-        {
-          name: 'to_email',
-          type: 'string',
-          required: true,
-          description: 'Recipient email address'
-        },
-        {
-          name: 'subject',
-          type: 'string',
-          required: true,
-          description: 'Email subject line'
-        },
-        {
-          name: 'body',
-          type: 'string',
-          required: true,
-          description: 'Email body content'
-        },
-        {
-          name: 'html',
-          type: 'boolean',
-          required: false,
-          description: 'Whether body is HTML formatted',
-          default: false
-        }
-      ]
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        from_email: { type: 'string', format: 'email' },
-        to_email: { type: 'string', format: 'email' },
-        subject: { type: 'string' },
-        body: { type: 'string' },
-        html: { type: 'boolean' }
+      defaultChannel: {
+        type: 'string',
+        label: 'Default Channel',
+        required: false,
+        placeholder: '#general',
+        description: 'Default channel for notifications'
       },
-      required: ['from_email', 'to_email', 'subject', 'body']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message_id: { type: 'string' },
-        sent_at: { type: 'string' }
+      username: {
+        type: 'string',
+        label: 'Bot Username',
+        required: false,
+        placeholder: 'AI Assistant',
+        description: 'Display name for the bot'
       }
     },
-    examples: [
-      {
-        input: {
-          from_email: 'noreply@company.com',
-          to_email: 'admin@company.com',
-          subject: 'Daily Processing Report',
-          body: 'Today processed 150 documents with 98% success rate.',
-          html: false
-        },
-        output: {
-          success: true,
-          message_id: 'msg_abc123',
-          sent_at: '2024-01-15T10:30:00Z'
-        },
-        description: 'Send a daily report email'
-      }
-    ],
-    tags: ['email', 'smtp', 'notification', 'reports'],
+    capabilities: ['messaging', 'notifications', 'file-sharing', 'channel-management'],
+    tags: ['slack', 'communication', 'notifications', 'team'],
+    icon: '💬',
     difficulty: 'intermediate',
-    estimatedSetupTime: '4 minutes',
-    icon: '📧',
-    isActive: true
+    estimatedSetupTime: '5 minutes'
   },
   {
-    id: 'teams-notification',
-    name: 'Microsoft Teams Notification',
-    description: 'Send messages to Microsoft Teams channels',
+    id: 'github-integration',
+    name: 'GitHub Integration',
+    description: 'Create issues, PRs, and manage repositories',
+    category: 'Development',
+    type: 'integration',
+    configuration: {
+      accessToken: {
+        type: 'password',
+        label: 'Personal Access Token',
+        required: true,
+        placeholder: 'ghp_...',
+        description: 'GitHub Personal Access Token'
+      },
+      defaultRepo: {
+        type: 'string',
+        label: 'Default Repository',
+        required: false,
+        placeholder: 'owner/repo',
+        description: 'Default repository for operations'
+      }
+    },
+    capabilities: ['issue-creation', 'pr-management', 'repository-access', 'code-review'],
+    tags: ['github', 'git', 'development', 'version-control'],
+    icon: '🐙',
+    difficulty: 'intermediate',
+    estimatedSetupTime: '3 minutes'
+  },
+  {
+    id: 'email-smtp',
+    name: 'Email (SMTP)',
+    description: 'Send emails via SMTP server',
     category: 'Communication',
-    type: 'webhook',
+    type: 'integration',
     configuration: {
-      endpoint: 'https://outlook.office.com/webhook/{webhook_id}',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+      host: {
+        type: 'string',
+        label: 'SMTP Host',
+        required: true,
+        placeholder: 'smtp.gmail.com',
+        description: 'SMTP server hostname'
       },
-      parameters: [
-        {
-          name: 'webhook_url',
-          type: 'string',
-          required: true,
-          description: 'Teams webhook URL'
-        },
-        {
-          name: 'title',
-          type: 'string',
-          required: true,
-          description: 'Message title'
-        },
-        {
-          name: 'text',
-          type: 'string',
-          required: true,
-          description: 'Message content'
-        },
-        {
-          name: 'color',
-          type: 'string',
-          required: false,
-          description: 'Message color theme',
-          default: 'good'
-        }
-      ]
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string' },
-        text: { type: 'string' },
-        color: { type: 'string', enum: ['good', 'warning', 'attention'] }
+      port: {
+        type: 'number',
+        label: 'Port',
+        required: true,
+        placeholder: '587',
+        description: 'SMTP server port'
       },
-      required: ['title', 'text']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message_id: { type: 'string' }
+      username: {
+        type: 'string',
+        label: 'Username',
+        required: true,
+        placeholder: 'your-email@domain.com',
+        description: 'SMTP username/email'
+      },
+      password: {
+        type: 'password',
+        label: 'Password',
+        required: true,
+        placeholder: 'app-password',
+        description: 'SMTP password or app password'
+      },
+      fromName: {
+        type: 'string',
+        label: 'From Name',
+        required: false,
+        placeholder: 'AI Assistant',
+        description: 'Display name for sent emails'
       }
     },
-    examples: [
-      {
-        input: {
-          title: 'Workflow Completed',
-          text: 'The document processing workflow has completed successfully.',
-          color: 'good'
-        },
-        output: {
-          success: true,
-          message_id: 'teams_msg_123'
-        },
-        description: 'Send a success notification to Teams'
-      }
-    ],
-    tags: ['teams', 'microsoft', 'notification', 'webhook'],
-    difficulty: 'beginner',
-    estimatedSetupTime: '2 minutes',
-    icon: '📊',
-    isActive: true
-  },
-  {
-    id: 'zapier-trigger',
-    name: 'Zapier Integration',
-    description: 'Trigger Zapier workflows and connect to 5000+ apps',
-    category: 'Automation',
-    type: 'webhook',
-    configuration: {
-      endpoint: 'https://hooks.zapier.com/hooks/catch/{zapier_hook_id}',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      parameters: [
-        {
-          name: 'hook_url',
-          type: 'string',
-          required: true,
-          description: 'Zapier webhook URL'
-        },
-        {
-          name: 'event_type',
-          type: 'string',
-          required: true,
-          description: 'Type of event being triggered'
-        },
-        {
-          name: 'data',
-          type: 'object',
-          required: true,
-          description: 'Event data payload'
-        }
-      ]
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        event_type: { type: 'string' },
-        data: { type: 'object' }
-      },
-      required: ['event_type', 'data']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        zapier_id: { type: 'string' }
-      }
-    },
-    examples: [
-      {
-        input: {
-          event_type: 'document_processed',
-          data: {
-            document_name: 'contract.pdf',
-            status: 'completed',
-            insights: ['Key terms identified', 'Compliance verified']
-          }
-        },
-        output: {
-          success: true,
-          zapier_id: 'zap_abc123'
-        },
-        description: 'Trigger a Zapier workflow when document processing completes'
-      }
-    ],
-    tags: ['zapier', 'automation', 'integration', 'webhook'],
+    capabilities: ['email-sending', 'notifications', 'reports', 'alerts'],
+    tags: ['email', 'smtp', 'notifications', 'communication'],
+    icon: '📧',
     difficulty: 'intermediate',
-    estimatedSetupTime: '3 minutes',
-    icon: '⚡',
-    isActive: true
+    estimatedSetupTime: '4 minutes'
   },
   {
-    id: 'rest-api-caller',
-    name: 'Custom REST API',
-    description: 'Call any HTTP endpoint with custom configuration',
+    id: 'pdf-parser',
+    name: 'PDF Parser',
+    description: 'Extract text and data from PDF documents',
+    category: 'Document Processing',
+    type: 'utility',
+    configuration: {
+      extractImages: {
+        type: 'boolean',
+        label: 'Extract Images',
+        required: false,
+        description: 'Extract images from PDF files'
+      },
+      preserveLayout: {
+        type: 'boolean',
+        label: 'Preserve Layout',
+        required: false,
+        description: 'Maintain document layout structure'
+      }
+    },
+    capabilities: ['text-extraction', 'metadata-extraction', 'image-extraction', 'structure-analysis'],
+    tags: ['pdf', 'document', 'parsing', 'extraction'],
+    icon: '📄',
+    difficulty: 'beginner',
+    estimatedSetupTime: '1 minute'
+  },
+  {
+    id: 'csv-processor',
+    name: 'CSV Processor',
+    description: 'Parse and analyze CSV data files',
+    category: 'Data Processing',
+    type: 'utility',
+    configuration: {
+      delimiter: {
+        type: 'select',
+        label: 'Delimiter',
+        required: false,
+        options: [',', ';', '\t', '|'],
+        description: 'CSV field delimiter'
+      },
+      hasHeader: {
+        type: 'boolean',
+        label: 'Has Header Row',
+        required: false,
+        description: 'First row contains column headers'
+      },
+      encoding: {
+        type: 'select',
+        label: 'Encoding',
+        required: false,
+        options: ['utf-8', 'latin1', 'ascii'],
+        description: 'File encoding'
+      }
+    },
+    capabilities: ['data-parsing', 'analysis', 'validation', 'transformation'],
+    tags: ['csv', 'data', 'parsing', 'analysis'],
+    icon: '📊',
+    difficulty: 'beginner',
+    estimatedSetupTime: '1 minute'
+  },
+  {
+    id: 'webhook-receiver',
+    name: 'Webhook Receiver',
+    description: 'Receive and process incoming webhooks',
+    category: 'Integration',
+    type: 'webhook',
+    configuration: {
+      secret: {
+        type: 'password',
+        label: 'Webhook Secret',
+        required: false,
+        placeholder: 'whsec_...',
+        description: 'Secret for webhook verification'
+      },
+      allowedOrigins: {
+        type: 'textarea',
+        label: 'Allowed Origins',
+        required: false,
+        placeholder: 'https://api.github.com\nhttps://hooks.slack.com',
+        description: 'One origin per line'
+      }
+    },
+    capabilities: ['webhook-processing', 'event-handling', 'data-validation', 'routing'],
+    tags: ['webhook', 'api', 'integration', 'events'],
+    icon: '🔗',
+    difficulty: 'advanced',
+    estimatedSetupTime: '10 minutes'
+  },
+  {
+    id: 'zapier-integration',
+    name: 'Zapier Integration',
+    description: 'Connect to 5000+ apps via Zapier',
+    category: 'Automation',
+    type: 'integration',
+    configuration: {
+      apiKey: {
+        type: 'password',
+        label: 'Zapier API Key',
+        required: true,
+        placeholder: 'zap_...',
+        description: 'Your Zapier API key'
+      },
+      webhookUrl: {
+        type: 'string',
+        label: 'Webhook URL',
+        required: false,
+        placeholder: 'https://hooks.zapier.com/hooks/catch/...',
+        description: 'Zapier webhook URL for triggers'
+      }
+    },
+    capabilities: ['automation', 'app-integration', 'workflow-triggers', 'data-sync'],
+    tags: ['zapier', 'automation', 'integration', 'workflow'],
+    icon: '⚡',
+    difficulty: 'intermediate',
+    estimatedSetupTime: '5 minutes'
+  },
+  {
+    id: 'discord-bot',
+    name: 'Discord Bot',
+    description: 'Send messages and notifications to Discord',
+    category: 'Communication',
+    type: 'integration',
+    configuration: {
+      botToken: {
+        type: 'password',
+        label: 'Bot Token',
+        required: true,
+        placeholder: 'MTk4NjIyNDgzNDcxOTI1MjQ4...',
+        description: 'Discord bot token'
+      },
+      defaultChannelId: {
+        type: 'string',
+        label: 'Default Channel ID',
+        required: false,
+        placeholder: '123456789012345678',
+        description: 'Default channel for notifications'
+      }
+    },
+    capabilities: ['messaging', 'notifications', 'server-management', 'user-interaction'],
+    tags: ['discord', 'bot', 'communication', 'gaming'],
+    icon: '🎮',
+    difficulty: 'intermediate',
+    estimatedSetupTime: '4 minutes'
+  },
+  {
+    id: 'jira-integration',
+    name: 'Jira Integration',
+    description: 'Create and update Jira issues',
+    category: 'Project Management',
+    type: 'integration',
+    configuration: {
+      baseUrl: {
+        type: 'string',
+        label: 'Jira Base URL',
+        required: true,
+        placeholder: 'https://yourcompany.atlassian.net',
+        description: 'Your Jira instance URL'
+      },
+      email: {
+        type: 'string',
+        label: 'Email',
+        required: true,
+        placeholder: 'user@company.com',
+        description: 'Your Jira account email'
+      },
+      apiToken: {
+        type: 'password',
+        label: 'API Token',
+        required: true,
+        placeholder: 'ATATT3xFfGF0...',
+        description: 'Jira API token'
+      },
+      defaultProject: {
+        type: 'string',
+        label: 'Default Project Key',
+        required: false,
+        placeholder: 'PROJ',
+        description: 'Default project for issue creation'
+      }
+    },
+    capabilities: ['issue-management', 'project-tracking', 'workflow-automation', 'reporting'],
+    tags: ['jira', 'project-management', 'issues', 'atlassian'],
+    icon: '📋',
+    difficulty: 'advanced',
+    estimatedSetupTime: '6 minutes'
+  },
+  {
+    id: 'microsoft-teams',
+    name: 'Microsoft Teams',
+    description: 'Send notifications to Teams channels',
+    category: 'Communication',
+    type: 'integration',
+    configuration: {
+      webhookUrl: {
+        type: 'string',
+        label: 'Webhook URL',
+        required: true,
+        placeholder: 'https://outlook.office.com/webhook/...',
+        description: 'Teams incoming webhook URL'
+      },
+      defaultTitle: {
+        type: 'string',
+        label: 'Default Title',
+        required: false,
+        placeholder: 'AI Assistant Notification',
+        description: 'Default title for messages'
+      }
+    },
+    capabilities: ['messaging', 'notifications', 'cards', 'mentions'],
+    tags: ['teams', 'microsoft', 'communication', 'enterprise'],
+    icon: '👥',
+    difficulty: 'beginner',
+    estimatedSetupTime: '3 minutes'
+  },
+  {
+    id: 'rest-api-client',
+    name: 'REST API Client',
+    description: 'Make HTTP requests to any REST API',
     category: 'Integration',
     type: 'api',
     configuration: {
-      endpoint: '{custom_endpoint}',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+      baseUrl: {
+        type: 'string',
+        label: 'Base URL',
+        required: true,
+        placeholder: 'https://api.example.com',
+        description: 'API base URL'
       },
-      authentication: {
-        type: 'api_key',
-        key: 'X-API-Key',
-        value: '{api_key}'
+      authType: {
+        type: 'select',
+        label: 'Authentication Type',
+        required: false,
+        options: ['none', 'bearer', 'basic', 'api-key'],
+        description: 'Authentication method'
       },
-      parameters: [
-        {
-          name: 'endpoint_url',
-          type: 'string',
-          required: true,
-          description: 'Full API endpoint URL'
-        },
-        {
-          name: 'method',
-          type: 'string',
-          required: true,
-          description: 'HTTP method',
-          default: 'POST'
-        },
-        {
-          name: 'payload',
-          type: 'object',
-          required: false,
-          description: 'Request payload data'
-        },
-        {
-          name: 'headers',
-          type: 'object',
-          required: false,
-          description: 'Additional headers'
-        }
-      ]
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        endpoint_url: { type: 'string', format: 'uri' },
-        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] },
-        payload: { type: 'object' },
-        headers: { type: 'object' }
+      authToken: {
+        type: 'password',
+        label: 'Auth Token/Key',
+        required: false,
+        placeholder: 'Bearer token or API key',
+        description: 'Authentication credentials'
       },
-      required: ['endpoint_url', 'method']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        status_code: { type: 'number' },
-        response_data: { type: 'object' }
+      defaultHeaders: {
+        type: 'textarea',
+        label: 'Default Headers',
+        required: false,
+        placeholder: 'Content-Type: application/json\nX-Custom-Header: value',
+        description: 'Default headers (one per line)'
       }
     },
-    examples: [
-      {
-        input: {
-          endpoint_url: 'https://api.example.com/webhooks/process',
-          method: 'POST',
-          payload: {
-            event: 'workflow_completed',
-            data: { workflow_id: '123', status: 'success' }
-          }
-        },
-        output: {
-          success: true,
-          status_code: 200,
-          response_data: { message: 'Webhook received' }
-        },
-        description: 'Send workflow completion data to external API'
-      }
-    ],
-    tags: ['api', 'rest', 'http', 'custom', 'integration'],
-    difficulty: 'advanced',
-    estimatedSetupTime: '5 minutes',
+    capabilities: ['http-requests', 'api-integration', 'data-fetching', 'webhooks'],
+    tags: ['api', 'http', 'rest', 'integration'],
     icon: '🔄',
-    isActive: true
+    difficulty: 'advanced',
+    estimatedSetupTime: '8 minutes'
   },
   {
-    id: 'discord-notification',
-    name: 'Discord Bot Notification',
-    description: 'Send messages to Discord channels via bot',
-    category: 'Communication',
-    type: 'webhook',
+    id: 'database-connector',
+    name: 'Database Connector',
+    description: 'Connect to SQL databases for data operations',
+    category: 'Data Storage',
+    type: 'integration',
     configuration: {
-      endpoint: 'https://discord.com/api/webhooks/{webhook_id}/{webhook_token}',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+      type: {
+        type: 'select',
+        label: 'Database Type',
+        required: true,
+        options: ['postgresql', 'mysql', 'sqlite', 'mongodb'],
+        description: 'Type of database'
       },
-      parameters: [
-        {
-          name: 'webhook_url',
-          type: 'string',
-          required: true,
-          description: 'Discord webhook URL'
-        },
-        {
-          name: 'content',
-          type: 'string',
-          required: true,
-          description: 'Message content'
-        },
-        {
-          name: 'username',
-          type: 'string',
-          required: false,
-          description: 'Bot username override',
-          default: 'AI Agent'
-        },
-        {
-          name: 'avatar_url',
-          type: 'string',
-          required: false,
-          description: 'Bot avatar URL'
-        }
-      ]
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        content: { type: 'string' },
-        username: { type: 'string' },
-        avatar_url: { type: 'string', format: 'uri' }
+      connectionString: {
+        type: 'password',
+        label: 'Connection String',
+        required: true,
+        placeholder: 'postgresql://user:pass@host:port/db',
+        description: 'Database connection string'
       },
-      required: ['content']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message_id: { type: 'string' }
+      poolSize: {
+        type: 'number',
+        label: 'Connection Pool Size',
+        required: false,
+        placeholder: '10',
+        description: 'Maximum number of connections'
       }
     },
-    examples: [
-      {
-        input: {
-          content: '🤖 AI Agent has completed processing 50 documents with 96% accuracy!',
-          username: 'Document Processor',
-          avatar_url: 'https://example.com/bot-avatar.png'
-        },
-        output: {
-          success: true,
-          message_id: 'discord_msg_456'
-        },
-        description: 'Send processing completion notification to Discord'
-      }
-    ],
-    tags: ['discord', 'notification', 'bot', 'webhook'],
-    difficulty: 'beginner',
-    estimatedSetupTime: '2 minutes',
-    icon: '📱',
-    isActive: true
-  },
-  {
-    id: 'jira-issue-creator',
-    name: 'Jira Issue Creator',
-    description: 'Create and update Jira issues automatically',
-    category: 'Project Management',
-    type: 'api',
-    configuration: {
-      endpoint: 'https://{domain}.atlassian.net/rest/api/3/issue',
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      },
-      authentication: {
-        type: 'basic',
-        key: 'Authorization',
-        value: 'Basic {base64_credentials}'
-      },
-      parameters: [
-        {
-          name: 'domain',
-          type: 'string',
-          required: true,
-          description: 'Jira domain (subdomain.atlassian.net)'
-        },
-        {
-          name: 'project_key',
-          type: 'string',
-          required: true,
-          description: 'Jira project key'
-        },
-        {
-          name: 'issue_type',
-          type: 'string',
-          required: true,
-          description: 'Issue type (Bug, Task, Story, etc.)',
-          default: 'Task'
-        },
-        {
-          name: 'summary',
-          type: 'string',
-          required: true,
-          description: 'Issue summary/title'
-        },
-        {
-          name: 'description',
-          type: 'string',
-          required: false,
-          description: 'Issue description'
-        },
-        {
-          name: 'priority',
-          type: 'string',
-          required: false,
-          description: 'Issue priority',
-          default: 'Medium'
-        }
-      ]
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        project_key: { type: 'string' },
-        issue_type: { type: 'string' },
-        summary: { type: 'string' },
-        description: { type: 'string' },
-        priority: { type: 'string' }
-      },
-      required: ['project_key', 'issue_type', 'summary']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        issue_key: { type: 'string' },
-        issue_url: { type: 'string' }
-      }
-    },
-    examples: [
-      {
-        input: {
-          project_key: 'PROJ',
-          issue_type: 'Bug',
-          summary: 'Document processing failure for PDF files',
-          description: 'AI agent is failing to process PDF files larger than 5MB',
-          priority: 'High'
-        },
-        output: {
-          success: true,
-          issue_key: 'PROJ-123',
-          issue_url: 'https://company.atlassian.net/browse/PROJ-123'
-        },
-        description: 'Create a bug report in Jira'
-      }
-    ],
-    tags: ['jira', 'issues', 'project-management', 'api'],
-    difficulty: 'intermediate',
-    estimatedSetupTime: '4 minutes',
-    icon: '📋',
-    isActive: true
+    capabilities: ['data-storage', 'querying', 'transactions', 'migrations'],
+    tags: ['database', 'sql', 'storage', 'data'],
+    icon: '🗄️',
+    difficulty: 'advanced',
+    estimatedSetupTime: '10 minutes'
   }
 ];
 
 export const TOOL_CATEGORIES = [
+  'AI Models',
   'Communication',
   'Development',
-  'Automation',
+  'Document Processing',
+  'Data Processing',
   'Integration',
+  'Automation',
   'Project Management',
-  'Analytics',
-  'Security',
-  'Data Processing'
+  'Data Storage'
 ];
 
-export function getToolsByCategory(category: string): ToolDefinition[] {
+export function getToolsByCategory(category: string): ToolTemplate[] {
   return TOOLS_LIBRARY.filter(tool => tool.category === category);
 }
 
-export function searchTools(query: string): ToolDefinition[] {
+export function searchTools(query: string): ToolTemplate[] {
   const lowercaseQuery = query.toLowerCase();
   return TOOLS_LIBRARY.filter(tool => 
     tool.name.toLowerCase().includes(lowercaseQuery) ||
@@ -767,10 +549,38 @@ export function searchTools(query: string): ToolDefinition[] {
   );
 }
 
-export function getToolById(id: string): ToolDefinition | undefined {
+export function getToolById(id: string): ToolTemplate | undefined {
   return TOOLS_LIBRARY.find(tool => tool.id === id);
 }
 
-export function getActiveTools(): ToolDefinition[] {
-  return TOOLS_LIBRARY.filter(tool => tool.isActive);
+export function createToolInstance(template: ToolTemplate, configuration: Record<string, any>) {
+  return {
+    id: nanoid(),
+    templateId: template.id,
+    name: template.name,
+    type: template.type,
+    configuration,
+    status: 'active',
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+}
+
+export function validateToolConfiguration(template: ToolTemplate, configuration: Record<string, any>): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  for (const [key, config] of Object.entries(template.configuration)) {
+    if (config.required && (!configuration[key] || configuration[key] === '')) {
+      errors.push(`${config.label} is required`);
+    }
+    
+    if (configuration[key] && config.type === 'number' && isNaN(Number(configuration[key]))) {
+      errors.push(`${config.label} must be a valid number`);
+    }
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors
+  };
 }

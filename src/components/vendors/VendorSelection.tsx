@@ -769,3 +769,4 @@ const VendorSelection = () => {
 };
 
 export default VendorSelection;
+export { VendorSelection };

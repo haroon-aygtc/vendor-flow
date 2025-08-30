@@ -500,3 +500,4 @@ const AgentConfiguration = () => {
 };
 
 export default AgentConfiguration;
+export { AgentConfiguration };

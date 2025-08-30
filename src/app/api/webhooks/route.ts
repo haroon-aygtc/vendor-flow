@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { agents, activities, aiProviders } from '@/db/schema';
+import { webhooks, activities } from '@/db/schema';
 import { eq, desc, like, and } from 'drizzle-orm';
 import jwt from 'jsonwebtoken';
 import { nanoid } from 'nanoid';
+import crypto from 'crypto';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-dev-secret-key';
 
@@ -32,19 +33,19 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
 
-    let query = db.select().from(agents).where(eq(agents.userId, userId));
+    let query = db.select().from(webhooks).where(eq(webhooks.userId, userId));
 
     if (search) {
-      query = query.where(and(eq(agents.userId, userId), like(agents.name, `%${search}%`)));
+      query = query.where(and(eq(webhooks.userId, userId), like(webhooks.name, `%${search}%`)));
     }
 
-    const userAgents = await query.orderBy(desc(agents.createdAt));
+    const userWebhooks = await query.orderBy(desc(webhooks.createdAt));
 
-    return NextResponse.json({ agents: userAgents });
+    return NextResponse.json({ webhooks: userWebhooks });
   } catch (error) {
-    console.error('Get agents error:', error);
+    console.error('Get webhooks error:', error);
     return NextResponse.json(
-      { message: 'Failed to fetch agents' },
+      { message: 'Failed to fetch webhooks' },
       { status: 500 }
     );
   }
@@ -53,48 +54,50 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const userId = await verifyAuth(request);
-    const { name, description, prompt, provider, model, configuration } = await request.json();
+    const { name, type, configuration, events, generateSecret = true } = await request.json();
 
-    if (!name || !prompt || !provider) {
+    if (!name || !type || !configuration) {
       return NextResponse.json(
-        { message: 'Name, prompt, and provider are required' },
+        { message: 'Name, type, and configuration are required' },
         { status: 400 }
       );
     }
 
-    const agentId = nanoid();
-    const newAgent = {
-      id: agentId,
+    // Generate webhook secret if requested
+    const secret = generateSecret ? crypto.randomBytes(32).toString('hex') : null;
+
+    const webhookId = nanoid();
+    const newWebhook = {
+      id: webhookId,
       userId,
       name,
-      description: description || '',
-      prompt,
-      provider,
-      model: model || 'gpt-4',
-      configuration: configuration || {},
-      status: 'active',
-      executionCount: 0,
+      type,
+      configuration,
+      events: events || ['all'],
+      isActive: true,
+      secret,
+      totalTriggers: 0,
       createdAt: new Date(),
       updatedAt: new Date()
     };
 
-    await db.insert(agents).values(newAgent);
+    await db.insert(webhooks).values(newWebhook);
 
     // Log activity
     await db.insert(activities).values({
       id: nanoid(),
       userId,
-      type: 'agent_created',
-      message: `Created new agent: ${name}`,
+      type: 'webhook_created',
+      message: `Created webhook: ${name} (${type})`,
       status: 'success',
       createdAt: new Date()
     });
 
-    return NextResponse.json({ agent: newAgent });
+    return NextResponse.json({ webhook: newWebhook });
   } catch (error) {
-    console.error('Create agent error:', error);
+    console.error('Create webhook error:', error);
     return NextResponse.json(
-      { message: 'Failed to create agent' },
+      { message: 'Failed to create webhook' },
       { status: 500 }
     );
   }
@@ -103,41 +106,38 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const userId = await verifyAuth(request);
-    const { id, name, description, prompt, provider, model, configuration, status } = await request.json();
+    const { id, name, configuration, events, isActive } = await request.json();
 
     if (!id) {
       return NextResponse.json(
-        { message: 'Agent ID is required' },
+        { message: 'Webhook ID is required' },
         { status: 400 }
       );
     }
 
-    const updatedAgent = await db.update(agents)
+    const updatedWebhook = await db.update(webhooks)
       .set({
         name,
-        description,
-        prompt,
-        provider,
-        model,
         configuration,
-        status,
+        events,
+        isActive,
         updatedAt: new Date()
       })
-      .where(and(eq(agents.id, id), eq(agents.userId, userId)))
+      .where(and(eq(webhooks.id, id), eq(webhooks.userId, userId)))
       .returning();
 
-    if (updatedAgent.length === 0) {
+    if (updatedWebhook.length === 0) {
       return NextResponse.json(
-        { message: 'Agent not found' },
+        { message: 'Webhook not found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ agent: updatedAgent[0] });
+    return NextResponse.json({ webhook: updatedWebhook[0] });
   } catch (error) {
-    console.error('Update agent error:', error);
+    console.error('Update webhook error:', error);
     return NextResponse.json(
-      { message: 'Failed to update agent' },
+      { message: 'Failed to update webhook' },
       { status: 500 }
     );
   }
@@ -147,22 +147,22 @@ export async function DELETE(request: NextRequest) {
   try {
     const userId = await verifyAuth(request);
     const { searchParams } = new URL(request.url);
-    const agentId = searchParams.get('id');
+    const webhookId = searchParams.get('id');
 
-    if (!agentId) {
+    if (!webhookId) {
       return NextResponse.json(
-        { message: 'Agent ID is required' },
+        { message: 'Webhook ID is required' },
         { status: 400 }
       );
     }
 
-    const deletedAgent = await db.delete(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.userId, userId)))
+    const deletedWebhook = await db.delete(webhooks)
+      .where(and(eq(webhooks.id, webhookId), eq(webhooks.userId, userId)))
       .returning();
 
-    if (deletedAgent.length === 0) {
+    if (deletedWebhook.length === 0) {
       return NextResponse.json(
-        { message: 'Agent not found' },
+        { message: 'Webhook not found' },
         { status: 404 }
       );
     }
@@ -171,17 +171,17 @@ export async function DELETE(request: NextRequest) {
     await db.insert(activities).values({
       id: nanoid(),
       userId,
-      type: 'agent_deleted',
-      message: `Deleted agent: ${deletedAgent[0].name}`,
+      type: 'webhook_deleted',
+      message: `Deleted webhook: ${deletedWebhook[0].name}`,
       status: 'warning',
       createdAt: new Date()
     });
 
-    return NextResponse.json({ message: 'Agent deleted successfully' });
+    return NextResponse.json({ message: 'Webhook deleted successfully' });
   } catch (error) {
-    console.error('Delete agent error:', error);
+    console.error('Delete webhook error:', error);
     return NextResponse.json(
-      { message: 'Failed to delete agent' },
+      { message: 'Failed to delete webhook' },
       { status: 500 }
     );
   }

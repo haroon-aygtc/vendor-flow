@@ -1,53 +1,47 @@
-import { pgTable, text, timestamp, integer, boolean, decimal, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, integer, jsonb, boolean, decimal } from 'drizzle-orm/pg-core';
 
 // Users table
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
-  name: text('name').notNull(),
   email: text('email').notNull().unique(),
-  password: text('password').notNull(),
-  role: text('role', { enum: ['admin', 'user'] }).notNull().default('user'),
-  avatar: text('avatar'),
+  passwordHash: text('password_hash').notNull(),
+  name: text('name').notNull(),
+  role: text('role').notNull().default('user'),
+  isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  lastLogin: timestamp('last_login'),
 });
 
-// Password resets table
-export const passwordResets = pgTable('password_resets', {
+// AI Providers table
+export const aiProviders = pgTable('ai_providers', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  token: text('token').notNull().unique(),
-  expiresAt: timestamp('expires_at').notNull(),
+  name: text('name').notNull(),
+  type: text('type').notNull(), // 'openai', 'anthropic', 'azure', etc.
+  configuration: jsonb('configuration').notNull(), // API keys, endpoints, etc.
+  isActive: boolean('is_active').notNull().default(true),
+  lastTested: timestamp('last_tested'),
+  testStatus: text('test_status'), // 'success', 'failed', 'pending'
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-// AI Agents table
+// Agents table
 export const agents = pgTable('agents', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   description: text('description'),
   prompt: text('prompt').notNull(),
-  provider: text('provider').notNull().references(() => aiProviders.id, { onDelete: 'cascade' }),
-  model: text('model').notNull().references(() => aiModels.id, { onDelete: 'cascade' }),
-  status: text('status', { enum: ['active', 'inactive', 'error'] }).notNull().default('active'),
-  totalRuns: integer('total_runs').notNull().default(0),
-  successfulRuns: integer('successful_runs').notNull().default(0),
-  lastRun: timestamp('last_run'), 
+  provider: text('provider').notNull().references(() => aiProviders.id),
+  model: text('model').notNull(),
+  configuration: jsonb('configuration').notNull().default({}),
+  status: text('status').notNull().default('active'), // 'active', 'inactive', 'error'
+  executionCount: integer('execution_count').notNull().default(0),
+  avgExecutionTime: decimal('avg_execution_time'),
+  lastExecuted: timestamp('last_executed'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
-
-// AI Models table
-
-export const aiModels = pgTable('ai_models', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  description: text('description'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  provider: text('provider').notNull().references(() => aiProviders.id, { onDelete: 'cascade' }),
 });
 
 // Workflows table
@@ -56,13 +50,30 @@ export const workflows = pgTable('workflows', {
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   description: text('description'),
-  nodes: jsonb('nodes').notNull(),
-  edges: jsonb('edges').notNull(),
-  status: text('status', { enum: ['draft', 'active', 'paused', 'error'] }).notNull().default('draft'),
+  nodes: jsonb('nodes').notNull().default([]),
+  edges: jsonb('edges').notNull().default([]),
+  status: text('status').notNull().default('draft'), // 'draft', 'active', 'inactive'
   executionCount: integer('execution_count').notNull().default(0),
+  avgExecutionTime: decimal('avg_execution_time'),
   lastExecuted: timestamp('last_executed'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// Workflow Executions table
+export const workflowExecutions = pgTable('workflow_executions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  workflowId: text('workflow_id').references(() => workflows.id, { onDelete: 'cascade' }),
+  agentId: text('agent_id').references(() => agents.id, { onDelete: 'set null' }),
+  status: text('status').notNull(), // 'running', 'completed', 'failed', 'cancelled'
+  input: jsonb('input').notNull(),
+  output: jsonb('output'),
+  executionTime: integer('execution_time'), // in milliseconds
+  errorMessage: text('error_message'),
+  nodeExecutions: jsonb('node_executions').default([]),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  completedAt: timestamp('completed_at'),
 });
 
 // Documents table
@@ -70,39 +81,13 @@ export const documents = pgTable('documents', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
-  type: text('type').notNull(),
+  type: text('type').notNull(), // 'pdf', 'csv', 'markdown', 'txt'
   size: integer('size').notNull(),
-  url: text('url').notNull(),
-  status: text('status', { enum: ['uploaded', 'processing', 'completed', 'error'] }).notNull().default('uploaded'),
+  content: text('content'),
   extractedData: jsonb('extracted_data'),
-  processingResults: jsonb('processing_results'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
-
-// Activities table
-export const activities = pgTable('activities', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  type: text('type').notNull(),
-  message: text('message').notNull(),
-  status: text('status', { enum: ['success', 'warning', 'error', 'info'] }).notNull().default('info'),
-  metadata: jsonb('metadata'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
-
-// AI Providers table
-export const aiProviders = pgTable('ai_providers', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  type: text('type').notNull(),
-  apiKey: text('api_key').notNull(),
-  endpoint: text('endpoint'),
-  model: text('model'),
-  isActive: boolean('is_active').notNull().default(true),
-  rateLimitRpm: integer('rate_limit_rpm'),
-  rateLimitTpm: integer('rate_limit_tpm'),
+  processingStatus: text('processing_status').notNull().default('pending'), // 'pending', 'processing', 'completed', 'failed'
+  storageUrl: text('storage_url'),
+  metadata: jsonb('metadata').default({}),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -113,79 +98,123 @@ export const vendors = pgTable('vendors', {
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   category: text('category').notNull(),
-  rating: decimal('rating', { precision: 3, scale: 2 }).notNull(),
-  onTimeDelivery: decimal('on_time_delivery', { precision: 5, scale: 2 }).notNull(),
-  qualityScore: decimal('quality_score', { precision: 5, scale: 2 }).notNull(),
-  avgPriceVsMarket: decimal('avg_price_vs_market', { precision: 5, scale: 2 }).notNull(),
-  completedOrders: integer('completed_orders').notNull().default(0),
-  performanceTrend: text('performance_trend', { enum: ['improving', 'stable', 'declining'] }).notNull().default('stable'),
-  contactInfo: jsonb('contact_info'),
-  capabilities: jsonb('capabilities'),
+  rating: decimal('rating', { precision: 3, scale: 2 }).default('0'),
+  onTimeDelivery: decimal('on_time_delivery', { precision: 5, scale: 2 }).default('0'),
+  qualityScore: decimal('quality_score', { precision: 5, scale: 2 }).default('0'),
+  avgPriceVsMarket: decimal('avg_price_vs_market', { precision: 5, scale: 2 }).default('0'),
+  completedOrders: integer('completed_orders').default(0),
+  performanceTrend: text('performance_trend').default('stable'), // 'improving', 'stable', 'declining'
+  contactInfo: jsonb('contact_info').default({}),
+  capabilities: jsonb('capabilities').default([]),
+  riskScore: decimal('risk_score', { precision: 5, scale: 2 }),
+  complianceStatus: text('compliance_status').default('pending'), // 'compliant', 'non_compliant', 'pending'
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-// Procurement requests table
-export const procurementRequests = pgTable('procurement_requests', {
+// Webhooks table
+export const webhooks = pgTable('webhooks', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  title: text('title').notNull(),
-  description: text('description').notNull(),
-  category: text('category').notNull(),
-  budget: decimal('budget', { precision: 10, scale: 2 }),
-  deadline: timestamp('deadline'),
-  status: text('status', { enum: ['draft', 'published', 'in_review', 'completed', 'cancelled'] }).notNull().default('draft'),
-  requirements: jsonb('requirements'),
-  selectedVendorId: text('selected_vendor_id').references(() => vendors.id),
+  name: text('name').notNull(),
+  type: text('type').notNull(), // 'slack', 'email', 'github', etc.
+  configuration: jsonb('configuration').notNull(),
+  events: jsonb('events').notNull().default([]), // Array of event types to listen for
+  isActive: boolean('is_active').notNull().default(true),
+  secret: text('secret'),
+  lastTriggered: timestamp('last_triggered'),
+  totalTriggers: integer('total_triggers').notNull().default(0),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-// Vendor proposals table
-export const vendorProposals = pgTable('vendor_proposals', {
+// Webhook Events table
+export const webhookEvents = pgTable('webhook_events', {
   id: text('id').primaryKey(),
-  procurementRequestId: text('procurement_request_id').notNull().references(() => procurementRequests.id, { onDelete: 'cascade' }),
-  vendorId: text('vendor_id').notNull().references(() => vendors.id, { onDelete: 'cascade' }),
-  proposedPrice: decimal('proposed_price', { precision: 10, scale: 2 }).notNull(),
-  deliveryTime: integer('delivery_time').notNull(), // in days
-  proposal: text('proposal').notNull(),
-  attachments: jsonb('attachments'),
-  aiScore: decimal('ai_score', { precision: 5, scale: 2 }),
-  aiAnalysis: jsonb('ai_analysis'),
-  status: text('status', { enum: ['submitted', 'under_review', 'accepted', 'rejected'] }).notNull().default('submitted'),
+  webhookId: text('webhook_id').notNull().references(() => webhooks.id, { onDelete: 'cascade' }),
+  eventType: text('event_type').notNull(),
+  payload: jsonb('payload').notNull(),
+  status: text('status').notNull().default('pending'), // 'pending', 'processed', 'failed'
+  processedAt: timestamp('processed_at'),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// Activities table (for audit log)
+export const activities = pgTable('activities', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(), // 'agent_created', 'workflow_executed', etc.
+  message: text('message').notNull(),
+  status: text('status').notNull(), // 'success', 'warning', 'error'
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// Tool Instances table
+export const toolInstances = pgTable('tool_instances', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  templateId: text('template_id').notNull(), // Reference to tool template
+  name: text('name').notNull(),
+  type: text('type').notNull(),
+  configuration: jsonb('configuration').notNull(),
+  status: text('status').notNull().default('active'),
+  lastUsed: timestamp('last_used'),
+  usageCount: integer('usage_count').notNull().default(0),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-
-// Agent Executions table
-export const agentExecutions = pgTable('agent_executions', {
+// Agent Tools relationship table
+export const agentTools = pgTable('agent_tools', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  status: text('status', { enum: ['pending', 'running', 'completed', 'failed'] }).notNull().default('pending'),
-  input: jsonb('input'),
-  output: jsonb('output'),
-  error: text('error'),
-  startedAt: timestamp('started_at'),
-  completedAt: timestamp('completed_at'),
-  duration: integer('duration'),
-  tokenUsage: jsonb('token_usage'),
+  toolInstanceId: text('tool_instance_id').notNull().references(() => toolInstances.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-
-// Activity Feed table
-export const activityFeed = pgTable('activity_feed', {
+// Performance Metrics table
+export const performanceMetrics = pgTable('performance_metrics', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  type: text('type').notNull(),
-  title: text('title').notNull(),
-  description: text('description'),
-  message: text('message').notNull(),
-  entityType: text('entity_type'),
-  entityId: text('entity_id'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  entityType: text('entity_type').notNull(), // 'agent', 'workflow', 'provider'
+  entityId: text('entity_id').notNull(),
+  metricType: text('metric_type').notNull(), // 'execution_time', 'success_rate', 'cost'
+  value: decimal('value', { precision: 10, scale: 4 }).notNull(),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+  metadata: jsonb('metadata').default({}),
 });
+
+// API Keys table (for secure storage)
+export const apiKeys = pgTable('api_keys', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  keyHash: text('key_hash').notNull(), // Hashed API key
+  permissions: jsonb('permissions').notNull().default([]),
+  lastUsed: timestamp('last_used'),
+  expiresAt: timestamp('expires_at'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// Export all tables for use in queries
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+export type AIProvider = typeof aiProviders.$inferSelect;
+export type NewAIProvider = typeof aiProviders.$inferInsert;
+export type Agent = typeof agents.$inferSelect;
+export type NewAgent = typeof agents.$inferInsert;
+export type Workflow = typeof workflows.$inferSelect;
+export type NewWorkflow = typeof workflows.$inferInsert;
+export type WorkflowExecution = typeof workflowExecutions.$inferSelect;
+export type NewWorkflowExecution = typeof workflowExecutions.$inferInsert;
+export type Document = typeof documents.$inferSelect;
+export type NewDocument = typeof documents.$inferInsert;
+export type Vendor = typeof vendors.$inferSelect;
+export type NewVendor = typeof vendors.$inferInsert;
+export type Webhook = typeof webhooks.$inferSelect;
+export type NewWebhook = typeof webhooks.$inferInsert;
+export type Activity = typeof activities.$inferSelect;
+export type NewActivity = typeof activities.$inferInsert;

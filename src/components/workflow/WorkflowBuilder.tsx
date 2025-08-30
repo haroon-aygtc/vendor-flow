@@ -713,3 +713,4 @@ const WorkflowBuilder = () => {
 };
 
 export default WorkflowBuilder;
+export { WorkflowBuilder };

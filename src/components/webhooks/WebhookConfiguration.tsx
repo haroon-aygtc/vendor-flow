@@ -2,22 +2,18 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Webhook, 
-  Settings, 
   Plus, 
-  Check, 
-  X, 
+  Settings, 
+  Trash2, 
+  Edit, 
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  Loader2,
+  Webhook,
   ExternalLink,
   Copy,
-  Loader2,
-  AlertCircle,
-  CheckCircle,
-  Zap,
-  MessageSquare,
-  Mail,
-  Github,
-  Users,
-  Bot
+  TestTube
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,166 +26,103 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
+import { TOOLS_LIBRARY, getToolById, validateToolConfiguration } from '@/lib/tools-library';
 import Cookies from 'js-cookie';
 
 interface WebhookConfig {
   id: string;
   name: string;
-  type: 'slack' | 'github' | 'email' | 'teams' | 'zapier' | 'discord' | 'jira' | 'custom';
-  url: string;
-  isActive: boolean;
-  events: string[];
-  headers?: Record<string, string>;
-  authentication?: {
-    type: 'bearer' | 'api_key' | 'basic';
-    value: string;
-  };
+  type: string;
+  status: 'connected' | 'disconnected' | 'error' | 'testing';
   configuration: Record<string, any>;
+  events: string[];
   lastTriggered?: string;
-  successCount: number;
-  errorCount: number;
+  totalTriggers: number;
   createdAt: string;
+  updatedAt: string;
 }
 
-const WEBHOOK_TYPES = [
+const WEBHOOK_INTEGRATIONS = [
   {
     id: 'slack',
     name: 'Slack',
-    icon: MessageSquare,
-    description: 'Send notifications to Slack channels',
-    color: 'bg-purple-100 text-purple-700',
-    events: ['agent_completed', 'workflow_finished', 'document_processed', 'error_occurred'],
-    configFields: [
-      { name: 'webhook_url', label: 'Webhook URL', type: 'url', required: true },
-      { name: 'channel', label: 'Channel', type: 'text', required: true, placeholder: '#general' },
-      { name: 'username', label: 'Bot Username', type: 'text', required: false, placeholder: 'AI Agent' }
-    ]
+    description: 'Send notifications to channels',
+    icon: '💬',
+    status: 'connected',
+    channels: ['#procurement', '#alerts'],
+    quickSetup: true
+  },
+  {
+    id: 'email-smtp',
+    name: 'Email (SMTP)',
+    description: 'Email notifications & reports',
+    icon: '📧',
+    status: 'connected',
+    email: 'admin@company.com',
+    quickSetup: true
   },
   {
     id: 'github',
     name: 'GitHub',
-    icon: Github,
-    description: 'Create issues and updates',
-    color: 'bg-gray-100 text-gray-700',
-    events: ['error_occurred', 'workflow_failed', 'security_alert'],
-    configFields: [
-      { name: 'token', label: 'GitHub Token', type: 'password', required: true },
-      { name: 'owner', label: 'Repository Owner', type: 'text', required: true },
-      { name: 'repo', label: 'Repository Name', type: 'text', required: true }
-    ]
+    description: 'Create issues & updates',
+    icon: '🐙',
+    status: 'disconnected',
+    quickSetup: true
   },
   {
-    id: 'email',
-    name: 'Email (SMTP)',
-    icon: Mail,
-    description: 'Email notifications & reports',
-    color: 'bg-blue-100 text-blue-700',
-    events: ['daily_report', 'error_occurred', 'workflow_finished', 'agent_completed'],
-    configFields: [
-      { name: 'smtp_host', label: 'SMTP Host', type: 'text', required: true },
-      { name: 'smtp_port', label: 'SMTP Port', type: 'number', required: true, placeholder: '587' },
-      { name: 'username', label: 'Username', type: 'text', required: true },
-      { name: 'password', label: 'Password', type: 'password', required: true },
-      { name: 'from_email', label: 'From Email', type: 'email', required: true },
-      { name: 'to_email', label: 'To Email', type: 'email', required: true }
-    ]
-  },
-  {
-    id: 'teams',
+    id: 'microsoft-teams',
     name: 'Microsoft Teams',
-    icon: Users,
     description: 'Team notifications',
-    color: 'bg-indigo-100 text-indigo-700',
-    events: ['workflow_finished', 'agent_completed', 'error_occurred'],
-    configFields: [
-      { name: 'webhook_url', label: 'Teams Webhook URL', type: 'url', required: true },
-      { name: 'team_name', label: 'Team Name', type: 'text', required: false }
-    ]
+    icon: '👥',
+    status: 'connected',
+    team: 'Procurement Team',
+    quickSetup: true
   },
   {
     id: 'zapier',
     name: 'Zapier',
-    icon: Zap,
     description: 'Connect 5000+ apps',
-    color: 'bg-orange-100 text-orange-700',
-    events: ['agent_completed', 'workflow_finished', 'document_processed', 'data_updated'],
-    configFields: [
-      { name: 'webhook_url', label: 'Zapier Webhook URL', type: 'url', required: true }
-    ]
+    icon: '⚡',
+    status: 'disconnected',
+    quickSetup: true
   },
   {
-    id: 'discord',
-    name: 'Discord',
-    icon: Bot,
-    description: 'Bot notifications',
-    color: 'bg-violet-100 text-violet-700',
-    events: ['agent_completed', 'workflow_finished', 'error_occurred'],
-    configFields: [
-      { name: 'webhook_url', label: 'Discord Webhook URL', type: 'url', required: true },
-      { name: 'username', label: 'Bot Username', type: 'text', required: false, placeholder: 'AI Agent' }
-    ]
-  },
-  {
-    id: 'jira',
-    name: 'Jira',
-    icon: Settings,
-    description: 'Create & update issues',
-    color: 'bg-blue-100 text-blue-700',
-    events: ['error_occurred', 'workflow_failed', 'security_alert'],
-    configFields: [
-      { name: 'domain', label: 'Jira Domain', type: 'text', required: true, placeholder: 'company.atlassian.net' },
-      { name: 'email', label: 'Email', type: 'email', required: true },
-      { name: 'api_token', label: 'API Token', type: 'password', required: true },
-      { name: 'project_key', label: 'Project Key', type: 'text', required: true }
-    ]
-  },
-  {
-    id: 'custom',
+    id: 'rest-api-client',
     name: 'Custom REST API',
-    icon: ExternalLink,
     description: 'Any HTTP endpoint',
-    color: 'bg-green-100 text-green-700',
-    events: ['agent_completed', 'workflow_finished', 'document_processed', 'error_occurred', 'custom_event'],
-    configFields: [
-      { name: 'endpoint_url', label: 'Endpoint URL', type: 'url', required: true },
-      { name: 'method', label: 'HTTP Method', type: 'select', required: true, options: ['POST', 'PUT', 'PATCH'] },
-      { name: 'api_key', label: 'API Key', type: 'password', required: false },
-      { name: 'custom_headers', label: 'Custom Headers (JSON)', type: 'textarea', required: false }
-    ]
+    icon: '🔄',
+    status: 'configure',
+    quickSetup: false
+  },
+  {
+    id: 'discord-bot',
+    name: 'Discord',
+    description: 'Bot notifications',
+    icon: '🎮',
+    status: 'disconnected',
+    quickSetup: true
+  },
+  {
+    id: 'jira-integration',
+    name: 'Jira',
+    description: 'Create & update tickets',
+    icon: '📋',
+    status: 'disconnected',
+    quickSetup: true
   }
-];
-
-const AVAILABLE_EVENTS = [
-  { id: 'agent_completed', name: 'Agent Completed', description: 'When an AI agent finishes execution' },
-  { id: 'workflow_finished', name: 'Workflow Finished', description: 'When a workflow completes' },
-  { id: 'document_processed', name: 'Document Processed', description: 'When document processing completes' },
-  { id: 'error_occurred', name: 'Error Occurred', description: 'When any error happens' },
-  { id: 'workflow_failed', name: 'Workflow Failed', description: 'When a workflow fails' },
-  { id: 'security_alert', name: 'Security Alert', description: 'Security-related events' },
-  { id: 'daily_report', name: 'Daily Report', description: 'Daily summary reports' },
-  { id: 'data_updated', name: 'Data Updated', description: 'When data is updated' },
-  { id: 'custom_event', name: 'Custom Event', description: 'Custom defined events' }
 ];
 
 const WebhookConfiguration = () => {
   const [webhooks, setWebhooks] = useState<WebhookConfig[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [configuring, setConfiguring] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [selectedType, setSelectedType] = useState<string>('');
-  const [newWebhook, setNewWebhook] = useState<Partial<WebhookConfig>>({
-    name: '',
-    type: 'slack' as any,
-    url: '',
-    isActive: true,
-    events: [],
-    configuration: {},
-    headers: {},
-    successCount: 0,
-    errorCount: 0
-  });
+  const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [selectedIntegration, setSelectedIntegration] = useState<any>(null);
+  const [testResult, setTestResult] = useState<any>(null);
   const { toast } = useToast();
+
+  const [configuration, setConfiguration] = useState<Record<string, any>>({});
 
   useEffect(() => {
     fetchWebhooks();
@@ -221,18 +154,38 @@ const WebhookConfiguration = () => {
     }
   };
 
-  const createWebhook = async () => {
-    if (!newWebhook.name || !newWebhook.type || !newWebhook.url) {
+  const openConfiguration = (integration: any) => {
+    setSelectedIntegration(integration);
+    const tool = getToolById(integration.id);
+    if (tool) {
+      // Initialize configuration with default values
+      const defaultConfig: Record<string, any> = {};
+      Object.entries(tool.configuration).forEach(([key, config]) => {
+        defaultConfig[key] = '';
+      });
+      setConfiguration(defaultConfig);
+    }
+    setShowConfigDialog(true);
+  };
+
+  const saveConfiguration = async () => {
+    if (!selectedIntegration) return;
+
+    const tool = getToolById(selectedIntegration.id);
+    if (!tool) return;
+
+    const validation = validateToolConfiguration(tool, configuration);
+    if (!validation.valid) {
       toast({
         title: "Validation Error",
-        description: "Name, type, and URL are required",
+        description: validation.errors.join(', '),
         variant: "destructive",
       });
       return;
     }
 
     try {
-      setSaving(true);
+      setConfiguring(selectedIntegration.id);
       const token = Cookies.get('auth_token');
       const response = await fetch('/api/webhooks', {
         method: 'POST',
@@ -240,41 +193,36 @@ const WebhookConfiguration = () => {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newWebhook),
+        body: JSON.stringify({
+          name: selectedIntegration.name,
+          type: selectedIntegration.id,
+          configuration,
+          events: ['all'] // Default to all events
+        }),
       });
 
       if (response.ok) {
         const data = await response.json();
         setWebhooks([data.webhook, ...webhooks]);
-        setNewWebhook({
-          name: '',
-          type: 'slack' as any,
-          url: '',
-          isActive: true,
-          events: [],
-          configuration: {},
-          headers: {},
-          successCount: 0,
-          errorCount: 0
-        });
-        setShowCreateDialog(false);
+        setShowConfigDialog(false);
+        setConfiguration({});
         toast({
           title: "Success",
-          description: "Webhook configured successfully",
+          description: `${selectedIntegration.name} configured successfully`,
         });
       } else {
         const error = await response.json();
         throw new Error(error.message);
       }
     } catch (error) {
-      console.error('Error creating webhook:', error);
+      console.error('Error configuring webhook:', error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create webhook",
+        description: error instanceof Error ? error.message : "Failed to configure webhook",
         variant: "destructive",
       });
     } finally {
-      setSaving(false);
+      setConfiguring(null);
     }
   };
 
@@ -291,29 +239,21 @@ const WebhookConfiguration = () => {
         body: JSON.stringify({
           webhookId,
           testData: {
-            event: 'test_event',
-            message: 'This is a test notification from your AI Agent Platform',
-            timestamp: new Date().toISOString()
+            message: 'Test notification from AI Agent Platform',
+            timestamp: new Date().toISOString(),
+            type: 'test'
           }
         }),
       });
 
       if (response.ok) {
         const data = await response.json();
+        setTestResult(data);
         toast({
           title: data.success ? "Test Successful" : "Test Failed",
-          description: data.success ? "Webhook test completed successfully" : data.error,
+          description: data.success ? "Webhook is working correctly" : data.error,
           variant: data.success ? "default" : "destructive",
         });
-
-        // Update webhook stats
-        if (data.success) {
-          setWebhooks(webhooks.map(w => 
-            w.id === webhookId 
-              ? { ...w, successCount: w.successCount + 1, lastTriggered: new Date().toISOString() }
-              : w
-          ));
-        }
       } else {
         const error = await response.json();
         throw new Error(error.message);
@@ -327,40 +267,6 @@ const WebhookConfiguration = () => {
       });
     } finally {
       setTesting(null);
-    }
-  };
-
-  const toggleWebhook = async (webhookId: string, isActive: boolean) => {
-    try {
-      const token = Cookies.get('auth_token');
-      const response = await fetch('/api/webhooks', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: webhookId,
-          isActive
-        }),
-      });
-
-      if (response.ok) {
-        setWebhooks(webhooks.map(w => 
-          w.id === webhookId ? { ...w, isActive } : w
-        ));
-        toast({
-          title: "Success",
-          description: `Webhook ${isActive ? 'enabled' : 'disabled'} successfully`,
-        });
-      }
-    } catch (error) {
-      console.error('Error toggling webhook:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update webhook status",
-        variant: "destructive",
-      });
     }
   };
 
@@ -379,20 +285,24 @@ const WebhookConfiguration = () => {
         setWebhooks(webhooks.filter(w => w.id !== webhookId));
         toast({
           title: "Success",
-          description: "Webhook deleted successfully",
+          description: "Webhook configuration deleted",
         });
+      } else {
+        const error = await response.json();
+        throw new Error(error.message);
       }
     } catch (error) {
       console.error('Error deleting webhook:', error);
       toast({
         title: "Error",
-        description: "Failed to delete webhook",
+        description: error instanceof Error ? error.message : "Failed to delete webhook",
         variant: "destructive",
       });
     }
   };
 
-  const copyWebhookUrl = (url: string) => {
+  const copyWebhookUrl = (webhookId: string) => {
+    const url = `${window.location.origin}/api/webhooks/receive/${webhookId}`;
     navigator.clipboard.writeText(url);
     toast({
       title: "Copied",
@@ -400,19 +310,83 @@ const WebhookConfiguration = () => {
     });
   };
 
-  const getWebhookTypeConfig = (type: string) => {
-    return WEBHOOK_TYPES.find(t => t.id === type);
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'connected':
+        return <Badge className="bg-green-100 text-green-800">Connected</Badge>;
+      case 'disconnected':
+        return <Badge variant="outline">Click to Connect</Badge>;
+      case 'configure':
+        return <Badge variant="secondary">Configure</Badge>;
+      case 'error':
+        return <Badge variant="destructive">Error</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
   };
 
-  const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+  const renderConfigurationField = (key: string, config: any) => {
+    const value = configuration[key] || '';
     
-    if (diffInMinutes < 1) return 'Just now';
-    if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
-    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} hours ago`;
-    return `${Math.floor(diffInMinutes / 1440)} days ago`;
+    switch (config.type) {
+      case 'password':
+        return (
+          <Input
+            type="password"
+            value={value}
+            onChange={(e) => setConfiguration({ ...configuration, [key]: e.target.value })}
+            placeholder={config.placeholder}
+          />
+        );
+      case 'textarea':
+        return (
+          <Textarea
+            value={value}
+            onChange={(e) => setConfiguration({ ...configuration, [key]: e.target.value })}
+            placeholder={config.placeholder}
+            rows={3}
+          />
+        );
+      case 'select':
+        return (
+          <Select value={value} onValueChange={(val) => setConfiguration({ ...configuration, [key]: val })}>
+            <SelectTrigger>
+              <SelectValue placeholder={config.placeholder} />
+            </SelectTrigger>
+            <SelectContent>
+              {config.options?.map((option: string) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+      case 'boolean':
+        return (
+          <Switch
+            checked={value === true || value === 'true'}
+            onCheckedChange={(checked) => setConfiguration({ ...configuration, [key]: checked })}
+          />
+        );
+      case 'number':
+        return (
+          <Input
+            type="number"
+            value={value}
+            onChange={(e) => setConfiguration({ ...configuration, [key]: e.target.value })}
+            placeholder={config.placeholder}
+          />
+        );
+      default:
+        return (
+          <Input
+            value={value}
+            onChange={(e) => setConfiguration({ ...configuration, [key]: e.target.value })}
+            placeholder={config.placeholder}
+          />
+        );
+    }
   };
 
   if (loading) {
@@ -428,303 +402,242 @@ const WebhookConfiguration = () => {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold">Webhook Configuration</h2>
-          <p className="text-gray-600">Connect your AI agents to external services and notifications</p>
+          <p className="text-gray-600">Connect external services and configure notifications</p>
         </div>
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Webhook
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Configure New Webhook</DialogTitle>
-              <DialogDescription>
-                Connect to external services for notifications and integrations
-              </DialogDescription>
-            </DialogHeader>
-            <Tabs defaultValue="type" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="type">1. Select Type</TabsTrigger>
-                <TabsTrigger value="config">2. Configure</TabsTrigger>
-                <TabsTrigger value="events">3. Events</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="type" className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  {WEBHOOK_TYPES.map((type) => {
-                    const Icon = type.icon;
-                    return (
-                      <Card 
-                        key={type.id}
-                        className={`cursor-pointer transition-colors ${
-                          selectedType === type.id ? 'ring-2 ring-blue-500' : ''
-                        }`}
-                        onClick={() => {
-                          setSelectedType(type.id);
-                          setNewWebhook({ ...newWebhook, type: type.id as any });
-                        }}
-                      >
-                        <CardHeader className="pb-2">
-                          <div className="flex items-center space-x-2">
-                            <div className={`p-2 rounded ${type.color}`}>
-                              <Icon className="h-4 w-4" />
-                            </div>
-                            <CardTitle className="text-sm">{type.name}</CardTitle>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="pt-0">
-                          <p className="text-xs text-gray-600">{type.description}</p>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="config" className="space-y-4">
-                <div>
-                  <Label htmlFor="name">Webhook Name</Label>
-                  <Input
-                    id="name"
-                    value={newWebhook.name}
-                    onChange={(e) => setNewWebhook({ ...newWebhook, name: e.target.value })}
-                    placeholder="e.g., Slack Notifications"
-                  />
-                </div>
-
-                {selectedType && getWebhookTypeConfig(selectedType)?.configFields.map((field) => (
-                  <div key={field.name}>
-                    <Label htmlFor={field.name}>{field.label}</Label>
-                    {field.type === 'select' ? (
-                      <Select 
-                        value={newWebhook.configuration?.[field.name] || ''}
-                        onValueChange={(value) => setNewWebhook({
-                          ...newWebhook,
-                          configuration: { ...newWebhook.configuration, [field.name]: value }
-                        })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder={`Select ${field.label}`} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {field.options?.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : field.type === 'textarea' ? (
-                      <Textarea
-                        id={field.name}
-                        value={newWebhook.configuration?.[field.name] || ''}
-                        onChange={(e) => setNewWebhook({
-                          ...newWebhook,
-                          configuration: { ...newWebhook.configuration, [field.name]: e.target.value }
-                        })}
-                        placeholder={field.placeholder}
-                        rows={3}
-                      />
-                    ) : (
-                      <Input
-                        id={field.name}
-                        type={field.type}
-                        value={newWebhook.configuration?.[field.name] || ''}
-                        onChange={(e) => {
-                          const value = field.type === 'number' ? parseInt(e.target.value) : e.target.value;
-                          setNewWebhook({
-                            ...newWebhook,
-                            configuration: { ...newWebhook.configuration, [field.name]: value }
-                          });
-                          if (field.name === 'webhook_url' || field.name === 'endpoint_url') {
-                            setNewWebhook({ ...newWebhook, url: e.target.value });
-                          }
-                        }}
-                        placeholder={field.placeholder}
-                        required={field.required}
-                      />
-                    )}
-                  </div>
-                ))}
-              </TabsContent>
-
-              <TabsContent value="events" className="space-y-4">
-                <div>
-                  <Label>Select Events to Trigger This Webhook</Label>
-                  <div className="grid grid-cols-1 gap-3 mt-2">
-                    {AVAILABLE_EVENTS.filter(event => 
-                      !selectedType || getWebhookTypeConfig(selectedType)?.events.includes(event.id)
-                    ).map((event) => (
-                      <div key={event.id} className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id={event.id}
-                          checked={newWebhook.events?.includes(event.id) || false}
-                          onChange={(e) => {
-                            const events = newWebhook.events || [];
-                            if (e.target.checked) {
-                              setNewWebhook({ ...newWebhook, events: [...events, event.id] });
-                            } else {
-                              setNewWebhook({ ...newWebhook, events: events.filter(e => e !== event.id) });
-                            }
-                          }}
-                          className="rounded"
-                        />
-                        <Label htmlFor={event.id} className="text-sm font-medium">
-                          {event.name}
-                        </Label>
-                        <span className="text-xs text-gray-500">- {event.description}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-end space-x-2 pt-4">
-                  <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={createWebhook} disabled={saving}>
-                    {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Create Webhook
-                  </Button>
-                </div>
-              </TabsContent>
-            </Tabs>
-          </DialogContent>
-        </Dialog>
       </div>
 
-      {webhooks.length === 0 ? (
-        <Card>
-          <CardContent className="text-center py-8">
-            <Webhook className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Webhooks Configured</h3>
-            <p className="text-gray-500 mb-4">Connect your AI agents to external services</p>
-            <Button onClick={() => setShowCreateDialog(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Configure Your First Webhook
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {webhooks.map((webhook) => {
-            const typeConfig = getWebhookTypeConfig(webhook.type);
-            const Icon = typeConfig?.icon || Webhook;
-            
-            return (
-              <Card key={webhook.id} className="relative">
+      <Tabs defaultValue="integrations" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="integrations">Available Integrations</TabsTrigger>
+          <TabsTrigger value="configured">Configured Webhooks</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="integrations" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {WEBHOOK_INTEGRATIONS.map((integration) => (
+              <Card key={integration.id} className="relative">
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <div className={`p-2 rounded ${typeConfig?.color || 'bg-gray-100 text-gray-700'}`}>
-                        <Icon className="h-4 w-4" />
-                      </div>
+                    <div className="flex items-center space-x-3">
+                      <span className="text-2xl">{integration.icon}</span>
                       <div>
-                        <CardTitle className="text-lg">{webhook.name}</CardTitle>
-                        <CardDescription>{typeConfig?.name}</CardDescription>
+                        <CardTitle className="text-lg">{integration.name}</CardTitle>
+                        <CardDescription>{integration.description}</CardDescription>
                       </div>
                     </div>
-                    <Switch
-                      checked={webhook.isActive}
-                      onCheckedChange={(checked) => toggleWebhook(webhook.id, checked)}
-                    />
+                    {getStatusBadge(integration.status)}
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Status:</span>
-                      <div className="flex items-center">
-                        {webhook.isActive ? (
-                          <CheckCircle className="h-4 w-4 text-green-500 mr-1" />
-                        ) : (
-                          <AlertCircle className="h-4 w-4 text-gray-500 mr-1" />
+                    {integration.status === 'connected' && (
+                      <div className="space-y-2">
+                        {integration.channels && (
+                          <div className="text-sm">
+                            <span className="text-gray-500">Channels:</span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {integration.channels.map((channel) => (
+                                <Badge key={channel} variant="outline" className="text-xs">
+                                  {channel}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
                         )}
-                        <span className={webhook.isActive ? 'text-green-600' : 'text-gray-500'}>
-                          {webhook.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Success Rate:</span>
-                      <span className="font-medium">
-                        {webhook.successCount + webhook.errorCount > 0 
-                          ? Math.round((webhook.successCount / (webhook.successCount + webhook.errorCount)) * 100)
-                          : 0}%
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Total Calls:</span>
-                      <span className="font-medium">{webhook.successCount + webhook.errorCount}</span>
-                    </div>
-
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Last Triggered:</span>
-                      <span className="font-medium">
-                        {webhook.lastTriggered ? formatTimeAgo(webhook.lastTriggered) : 'Never'}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      <span className="text-sm text-gray-500">Events:</span>
-                      <div className="flex flex-wrap gap-1">
-                        {webhook.events.slice(0, 3).map((event) => (
-                          <Badge key={event} variant="outline" className="text-xs">
-                            {AVAILABLE_EVENTS.find(e => e.id === event)?.name || event}
-                          </Badge>
-                        ))}
-                        {webhook.events.length > 3 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{webhook.events.length - 3} more
-                          </Badge>
+                        {integration.email && (
+                          <div className="text-sm">
+                            <span className="text-gray-500">Email:</span>
+                            <span className="ml-2 font-medium">{integration.email}</span>
+                          </div>
+                        )}
+                        {integration.team && (
+                          <div className="text-sm">
+                            <span className="text-gray-500">Team:</span>
+                            <span className="ml-2 font-medium">{integration.team}</span>
+                          </div>
                         )}
                       </div>
-                    </div>
+                    )}
 
-                    <div className="pt-3 border-t flex space-x-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => testWebhook(webhook.id)}
-                        disabled={testing === webhook.id}
-                        className="flex-1"
-                      >
-                        {testing === webhook.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                        ) : (
-                          <Zap className="h-3 w-3 mr-1" />
-                        )}
-                        Test
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => copyWebhookUrl(webhook.url)}
-                      >
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => deleteWebhook(webhook.id)}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
+                    <div className="pt-3 border-t">
+                      {integration.status === 'connected' ? (
+                        <div className="flex space-x-2">
+                          <Button size="sm" variant="outline" className="flex-1">
+                            <Settings className="h-3 w-3 mr-1" />
+                            Configure
+                          </Button>
+                          <Button size="sm" variant="outline">
+                            <TestTube className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button 
+                          size="sm" 
+                          className="w-full"
+                          onClick={() => openConfiguration(integration)}
+                          disabled={configuring === integration.id}
+                        >
+                          {configuring === integration.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          ) : (
+                            <Plus className="h-3 w-3 mr-1" />
+                          )}
+                          {integration.status === 'disconnected' ? 'Connect' : 'Configure'}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            );
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="configured" className="space-y-6">
+          {webhooks.length === 0 ? (
+            <Card>
+              <CardContent className="text-center py-8">
+                <Webhook className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Webhooks Configured</h3>
+                <p className="text-gray-500 mb-4">Configure your first webhook integration to get started</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {webhooks.map((webhook) => (
+                <Card key={webhook.id}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <span className="text-xl">
+                          {WEBHOOK_INTEGRATIONS.find(i => i.id === webhook.type)?.icon || '🔗'}
+                        </span>
+                        <div>
+                          <CardTitle className="text-lg">{webhook.name}</CardTitle>
+                          <CardDescription>
+                            {webhook.totalTriggers} triggers • Last: {webhook.lastTriggered ? new Date(webhook.lastTriggered).toLocaleDateString() : 'Never'}
+                          </CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant={
+                        webhook.status === 'connected' ? 'default' :
+                        webhook.status === 'error' ? 'destructive' : 'secondary'
+                      }>
+                        {webhook.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="text-sm">
+                        <span className="text-gray-500">Webhook URL:</span>
+                        <div className="flex items-center space-x-2 mt-1">
+                          <code className="bg-gray-100 px-2 py-1 rounded text-xs flex-1 truncate">
+                            {`${window.location.origin}/api/webhooks/receive/${webhook.id}`}
+                          </code>
+                          <Button size="sm" variant="outline" onClick={() => copyWebhookUrl(webhook.id)}>
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="text-sm">
+                        <span className="text-gray-500">Events:</span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {webhook.events.map((event) => (
+                            <Badge key={event} variant="outline" className="text-xs">
+                              {event}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t flex space-x-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => testWebhook(webhook.id)}
+                          disabled={testing === webhook.id}
+                        >
+                          {testing === webhook.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          ) : (
+                            <TestTube className="h-3 w-3 mr-1" />
+                          )}
+                          Test
+                        </Button>
+                        <Button size="sm" variant="outline">
+                          <Edit className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                        <Button size="sm" variant="outline">
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          Logs
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => deleteWebhook(webhook.id)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Configuration Dialog */}
+      <Dialog open={showConfigDialog} onOpenChange={setShowConfigDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Configure {selectedIntegration?.name}</DialogTitle>
+            <DialogDescription>
+              {selectedIntegration?.description}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedIntegration && (
+            <div className="space-y-4">
+              {(() => {
+                const tool = getToolById(selectedIntegration.id);
+                if (!tool) return <div>Tool configuration not found</div>;
+
+                return Object.entries(tool.configuration).map(([key, config]) => (
+                  <div key={key}>
+                    <Label htmlFor={key}>
+                      {config.label}
+                      {config.required && <span className="text-red-500 ml-1">*</span>}
+                    </Label>
+                    {renderConfigurationField(key, config)}
+                    {config.description && (
+                      <p className="text-xs text-gray-500 mt-1">{config.description}</p>
+                    )}
+                  </div>
+                ));
+              })()}
+              
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button variant="outline" onClick={() => setShowConfigDialog(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={saveConfiguration} disabled={configuring === selectedIntegration?.id}>
+                  {configuring === selectedIntegration?.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : null}
+                  Save Configuration
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
 export default WebhookConfiguration;
+export { WebhookConfiguration };
